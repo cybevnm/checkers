@@ -269,10 +269,26 @@
             (clamp (+ *src-square-x* dx) 0 (1- (board/width board)))
             *src-square-y*
             (clamp (+ *src-square-y* dy) 0 (1- (board/height board))))))
-(defun window/initiate-move ()
-  (setf *tgt-square-x* *src-square-x*
-        *tgt-square-y* *src-square-y*))
+(defun window/init-move (board)
+  (when (eql (board/square board *src-square-x* *src-square-y*) :white-check)
+    (setf *tgt-square-x* *src-square-x*
+          *tgt-square-y* *src-square-y*)))
+(defun window/apply-move (board)
+  (doplist (key move *moves*)
+    (let ((src (cons *src-square-x* *src-square-y*))
+          (tgt (cons *tgt-square-x* *tgt-square-y*)))
+      (when (move/validp move board :white-check src tgt)
+        (move/apply move board :white-check src tgt)
+        (setf *src-square-x* *tgt-square-x*
+              *src-square-y* *tgt-square-y*))))
+  (window/finalize-move))
+(defun window/init-or-apply-move (board)
+  (if (window/tgt-square-defined-p)
+      (window/apply-move board)
+      (window/init-move board)))
 (defun window/cancel-move ()
+  (window/finalize-move))
+(defun window/finalize-move ()
   (setf *tgt-square-x* nil
         *tgt-square-y* nil))
 (defun window/handle-input (board key)
@@ -281,7 +297,7 @@
     (:sdl-key-up (window/move-selection board 0 1))
     (:sdl-key-right (window/move-selection board 1 0))
     (:sdl-key-down (window/move-selection board 0 -1))
-    (:sdl-key-space (window/initiate-move))
+    (:sdl-key-space (window/init-or-apply-move board))
     (:sdl-key-escape (window/cancel-move))
     (:sdl-key-q (sdl:push-quit-event))))
 ;;; Entry point
