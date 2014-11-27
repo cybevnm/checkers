@@ -88,12 +88,6 @@
     (:white-check :up)
     (:black-check :down)))
 
-;; (defun board/square-empty-p (square)
-;;   (eql square :empty))
-;; (defun board/square-has-check-p (square)
-;;   (not (board/emptyp square)))
-;; (defmacro defmove ())
-
 (defun square-has-same-check-p (board curr-check pos)
   (eql (board/square board (car pos) (cdr pos)) curr-check))
 (defun square-empty-p (board curr-check pos)
@@ -192,8 +186,12 @@
                                   :black-check (sdl:color :r #x7A :g #x50 :b #x44)))
 (defparameter *check-pin-color* (list :white-check (sdl:color :r #xFF :g #xD6 :b #x58)
                                       :black-check (sdl:color :r #x8A :g #x60 :b #x54)))
-(defparameter *selected-check-x* 3)
-(defparameter *selected-check-y* 3)
+(defparameter *src-square-x* 3)
+(defparameter *src-square-y* 3)
+(defparameter *tgt-square-x* nil)
+(defparameter *tgt-square-y* nil)
+(defun window/tgt-square-defined-p ()
+  (and *tgt-square-x* *tgt-square-y*))
 (defparameter *board* (make-board))
 (defun window/calc-square-width (board)
   (/ *window-width* (board/width board)))
@@ -208,23 +206,33 @@
                             :color (getf *check-pin-color* square)))
 (defun window/calc-inv-y (board y)
   (- (board/height board) y 1))
-(defun window/draw-selected-square (board square-w square-h)
-  (when (and *selected-check-x* *selected-check-y*)
-    (sdl:draw-filled-circle-* (+ (* *selected-check-x* square-w) 
-                                 (/ square-w 2)) 
-                              (+ (* (window/calc-inv-y board *selected-check-y*) square-h) 
-                                 (/ square-h 2))
-                              (round (/ (/ (+ square-w square-h) 2) 2.5))
-                              :color sdl:*blue*)))
+(defun window/draw-selected-square (board x y square-w square-h color)
+  (sdl:draw-filled-circle-* (+ (* x square-w) (/ square-w 2)) 
+                            (+ (* (window/calc-inv-y board y) square-h) 
+                               (/ square-h 2))
+                            (round (/ (/ (+ square-w square-h) 2) 2.5))
+                            :color color))
+(defun window/draw-src-square (board square-w square-h)
+  (window/draw-selected-square board 
+                               *src-square-x* *src-square-y* 
+                               square-w square-h 
+                               sdl:*blue*))
+(defun window/draw-tgt-square (board square-w square-h)
+  (when (and *tgt-square-x* *tgt-square-y*)
+    (window/draw-selected-square board
+                                 *tgt-square-x* *tgt-square-y*
+                                 square-w square-h
+                                 sdl:*red*)))
 (defun window/draw-move-variants (board square-w square-h)
-  (when (and *selected-check-x* *selected-check-y*)
-    (doboard (x y square board)
-      (doplist (key move *moves*)
-        (when (or nil (move/validp move 
-                                   board 
-                                   (board/square board *selected-check-x* *selected-check-y*)
-                                   (cons *selected-check-x* *selected-check-y*) 
-                                   (cons x y)))
+  (doboard (x y square board)
+    (doplist (key move *moves*)
+      (let ((src-square (board/square board *src-square-x* *src-square-y*)))
+        (when (and (eql src-square :white-check) 
+                   (move/validp move 
+                                board 
+                                src-square
+                                (cons *src-square-x* *src-square-y*) 
+                                (cons x y)))
           (sdl:draw-box-* (* x square-w)
                           (* (window/calc-inv-y board y) square-h)
                           square-w 
@@ -247,18 +255,37 @@
   (let ((square-w  (window/calc-square-width board))
         (square-h (window/calc-square-height board)))
     (window/draw-background board square-w square-h)
-    (window/draw-selected-square board square-w square-h)
+    (window/draw-src-square board square-w square-h)
+    (window/draw-tgt-square board square-w square-h)
     (window/draw-move-variants board square-w square-h)
     (window/draw-checks board square-w square-h)))
 (defun window/draw-game (board)
   (window/draw-board board))
+(defun window/move-selection (board dx dy)
+  (if (and *tgt-square-x* *tgt-square-y*)
+      (setf *tgt-square-x* 
+            (clamp (+ *tgt-square-x* dx) 0 (1- (board/width board)))
+            *tgt-square-y*
+            (clamp (+ *tgt-square-y* dy) 0 (1- (board/height board))))
+      (setf *src-square-x* 
+            (clamp (+ *src-square-x* dx) 0 (1- (board/width board)))
+            *src-square-y*
+            (clamp (+ *src-square-y* dy) 0 (1- (board/height board))))))
+(defun window/initiate-move ()
+  (setf *tgt-square-x* *src-square-x*
+        *tgt-square-y* *src-square-y*))
+(defun window/cancel-move ()
+  (setf *tgt-square-x* nil
+        *tgt-square-y* nil))
 (defun window/handle-input (board key)
   (case key
-    (:sdl-key-left (setf *selected-check-x* (max 0 (1- *selected-check-x*))))
-    (:sdl-key-right (setf *selected-check-x* (min (1- (board/width board)) 
-                                                  (1+ *selected-check-x*))))
+    (:sdl-key-left (window/move-selection board -1 0))
+    (:sdl-key-up (window/move-selection board 0 1))
+    (:sdl-key-right (window/move-selection board 1 0))
+    (:sdl-key-down (window/move-selection board 0 -1))
+    (:sdl-key-space (window/initiate-move))
+    (:sdl-key-escape (window/cancel-move))
     (:sdl-key-q (sdl:push-quit-event))))
-
 ;;; Entry point
 (defun main ()
   (sdl:with-init ()
@@ -269,9 +296,10 @@
       (:key-down-event (:key key) (window/handle-input *board* key))
       (:idle ()
              (restart-case
-                 (sdl:with-surface (back-buffer (sdl:create-surface *window-width* 
-                                                                    *window-height*
-                                                                    :pixel-alpha 120))
+                 (sdl:with-surface 
+                     (back-buffer (sdl:create-surface *window-width* 
+                                                      *window-height*
+                                                      :pixel-alpha 120))
                    (handle-slime-requests)
                    (sdl:clear-display sdl:*black*)
                    (window/draw-game *board*)
