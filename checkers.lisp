@@ -16,7 +16,9 @@
     ;;  (swank::handle-requests connection t))))
     (when connection      
       (swank::handle-requests connection t))))
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; board ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass board ()
   ((squares :initarg :squares :reader board/squares)))
 (defun board/square (board x y)
@@ -107,7 +109,9 @@
   (ecase square
     (:white-check :up)
     (:black-check :down)))
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun square-has-same-check-p (board curr-check pos)
   (eql (board/square board (car pos) (cdr pos)) curr-check))
 (defun square-empty-p (board curr-check pos)
@@ -197,6 +201,9 @@
      (half-way-square-has-opposite-check-p source target t))
     ((kill-half-way-check source target)
      (move-check source target)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; ai ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass action ()
   ((parent :initarg :parent :initform nil)
    (board :initarg :board :reader action/board)
@@ -278,6 +285,9 @@
                 :black-check
                 (action/src action)
                 (action/tgt action))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; window ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defparameter *window-width* 400)
 (defparameter *window-height* 400)
 (defparameter *square-color* (list :white (sdl:color :r #xE8 :g #xD0 :b #xAA)
@@ -403,7 +413,9 @@
     (:sdl-key-space (window/init-or-apply-move board))
     (:sdl-key-escape (window/cancel-move))
     (:sdl-key-q (sdl:push-quit-event))))
-;;; Entry point
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Entry point ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun main ()
   (sdl:with-init ()
     (sdl:window *window-width* *window-height* :bpp 32)
