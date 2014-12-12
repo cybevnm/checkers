@@ -307,16 +307,19 @@
     (sdl:with-events (:poll)
       (:quit-event () t)
       (:video-expose-event () (sdl:update-display))
-      (:key-down-event (:key key) (window/handle-input *board* key))
+      (:key-down-event (:key key) 
+        (restart-case
+            (window/handle-input *board* key)
+          (continue () :report "Continue interaction")))
       (:idle ()
-             (restart-case
-                 (sdl:with-surface 
-                     (back-buffer (sdl:create-surface *window-width* 
-                                                      *window-height*
-                                                      :pixel-alpha 120))
-                   (handle-slime-requests)
-                   (sdl:clear-display sdl:*black*)
-                   (window/draw-game *board*)
-                   (sdl:blit-surface back-buffer sdl:*default-display*)
-                   (sdl:update-display))
-               (continue () :report "Continue interaction"))))))
+        (restart-case
+            (sdl:with-surface 
+                (back-buffer (sdl:create-surface *window-width* 
+                                                 *window-height*
+                                                 :pixel-alpha 120))
+              (handle-slime-requests)
+              (sdl:clear-display sdl:*black*)
+              (window/draw-game *board*)
+              (sdl:blit-surface back-buffer sdl:*default-display*)
+              (sdl:update-display))
+          (continue () :report "Continue interaction"))))))
