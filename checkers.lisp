@@ -204,16 +204,16 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; ai ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defclass action ()
+(defclass node ()
   ((parent :initarg :parent :initform nil)
-   (board :initarg :board :reader action/board)
-   (check :initarg :check :reader action/check)
-   (children :initarg :children :initform nil :accessor action/children)
-   (depth :initarg :depth :initform 0 :reader action/depth)
-   (rate :initarg :rate :reader action/rate)
-   (src :initarg :src :reader action/src)
-   (tgt :initarg :tgt :reader action/tgt)
-   (move :initarg :move :reader action/move)))
+   (board :initarg :board :reader node/board)
+   (check :initarg :check :reader node/check)
+   (children :initarg :children :initform nil :accessor node/children)
+   (depth :initarg :depth :initform 0 :reader node/depth)
+   (rate :initarg :rate :reader node/rate)
+   (src :initarg :src :reader node/src)
+   (tgt :initarg :tgt :reader node/tgt)
+   (move :initarg :move :reader node/move)))
 (defun ai/rate-board (board curr-check)
   (let ((rate 0))
     (doboard (x y square board)
@@ -221,10 +221,10 @@
         (incf rate (if (eql square curr-check) 1 -1))))
     rate))
 (defun ai/enum-moves (parent)
-  (let ((moves)
-        (board (action/board parent))
-        (curr-check (board/opposite-check (action/check parent)))
-        (curr-depth (1+ (action/depth parent))))
+  (let ((nodes)
+        (board (node/board parent))
+        (curr-check (board/opposite-check (node/check parent)))
+        (curr-depth (1+ (node/depth parent))))
     (doplist (key move *moves*)
       (doboard (src-x src-y src-square board)
         (doboard (tgt-x tgt-y tgt-square board)
@@ -233,7 +233,7 @@
             (when (move/validp move board curr-check src tgt)
               (alet (board/clone board)
                 (move/apply move it curr-check src tgt)
-                (push (make-instance 'action
+                (push (make-instance 'node
                                      :parent parent
                                      :board it 
                                      :check curr-check
@@ -242,27 +242,27 @@
                                      :src src
                                      :tgt tgt
                                      :move move)
-                      moves)))))))
-    moves))
+                      nodes)))))))
+    nodes))
 (defparameter *max-depth* 4)
 (defun ai/build-subtree (parent)
-  (unless (eql (action/depth parent) *max-depth*)
-    (let ((actions (ai/enum-moves parent)))
-      (setf (action/children parent) actions) 
-      (dolist (a actions)
-        (ai/build-subtree a)))))
+  (unless (eql (node/depth parent) *max-depth*)
+    (let ((nodes (ai/enum-moves parent)))
+      (setf (node/children parent) nodes) 
+      (dolist (n nodes)
+        (ai/build-subtree n)))))
 
 (defun ai/build-tree (board)
-  (alet (make-instance 'action 
+  (alet (make-instance 'node 
                         :check :white-check
                         :board board
                         :rate (ai/rate-board board :black-check))
     (ai/build-subtree it)
     it))
 (defun ai/rate-subtree (parent)
-  (let* ((children (action/children parent)))
+  (let* ((children (node/children parent)))
     (if children
-        (ecase (action/check parent)
+        (ecase (node/check parent)
           (:black-check 
            (reduce (lambda (a b) (min a (ai/rate-subtree b)))
                    children
@@ -271,22 +271,22 @@
            (reduce (lambda (a b) (max a (ai/rate-subtree b)))
                    children
                    :initial-value most-negative-fixnum)))
-        (action/rate parent))))
+        (node/rate parent))))
 (defun ai/max-rate-subtree (a b)
   (if (> (ai/rate-subtree a) (ai/rate-subtree b))
       a
       b))
-(defun ai/find-best-action (parent)
-  (alet (action/children parent)
+(defun ai/find-best-node (parent)
+  (alet (node/children parent)
     (reduce #'ai/max-rate-subtree it)))
 (defun ai/process (board)
   (let* ((tree (ai/build-tree board))
-         (action (ai/find-best-action tree)))
-    (move/apply (action/move action) 
+         (node (ai/find-best-node tree)))
+    (move/apply (node/move node) 
                 board
                 :black-check
-                (action/src action)
-                (action/tgt action))))
+                (node/src node)
+                (node/tgt node))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; window ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
