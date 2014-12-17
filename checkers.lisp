@@ -217,8 +217,8 @@
 (defun ai/rate-board (board curr-check)
   (let ((rate 0))
     (doboard (x y square board)
-      (when (eql curr-check square)
-        (incf rate)))
+      (when 
+        (incf rate (if (eql square curr-check) 1 -1))))
     rate))
 (defun ai/enum-moves (parent)
   (let ((moves)
@@ -238,7 +238,7 @@
                                      :board it 
                                      :check curr-check
                                      :depth curr-depth
-                                     :rate (ai/rate-board it curr-check)
+                                     :rate (ai/rate-board it :black-check)
                                      :src src
                                      :tgt tgt
                                      :move move)
@@ -256,20 +256,22 @@
   (alet (make-instance 'action 
                         :check :white-check
                         :board board
-                        :rate (ai/rate-board board :white-check))
+                        :rate (ai/rate-board board :black-check))
     (ai/build-subtree it)
     it))
-(defun ai/max-rate-action (a b)
-  (if (> (action/rate a) (action/rate b))
-      a
-      b))
 (defun ai/rate-subtree (parent)
   (let* ((children (action/children parent)))
     (if children
-        (ai/rate-subtree (reduce #'ai/max-rate-action children))
-        (if (eql (action/check parent) :black-check)
-            (action/rate parent)
-            0))))
+        (ecase (action/check parent)
+          (:black-check 
+           (reduce (lambda (a b) (min a (ai/rate-subtree b)))
+                   children
+                   :initial-value most-positive-fixnum))
+          (:white-check 
+           (reduce (lambda (a b) (max a (ai/rate-subtree b)))
+                   children
+                   :initial-value most-negative-fixnum)))
+        (action/rate parent))))
 (defun ai/max-rate-subtree (a b)
   (if (> (ai/rate-subtree a) (ai/rate-subtree b))
       a
