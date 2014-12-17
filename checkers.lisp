@@ -155,12 +155,12 @@
 ;; and so on...   
 (defclass move ()
   ((predicate :initarg :predicate :reader move/predicate)
-   (action :initarg :action :reader move/action)))
+   (modifier :initarg :modifier :reader move/modifier)))
 (defparameter *moves* nil)
 (defun move/validp (move board curr-check src-pos tgt-pos)
   (funcall (move/predicate move) board curr-check src-pos tgt-pos))
 (defun move/apply (move board curr-check src-pos tgt-pos)
-  (funcall (move/action move) board curr-check src-pos tgt-pos))
+  (funcall (move/modifier move) board curr-check src-pos tgt-pos))
 (defun move/remove (name)
   (remf *moves* name))
 (eval-when (:compile-toplevel :load-toplevel)
@@ -172,21 +172,20 @@
                      '(board curr-check) 
                      args-rest)
             ,result)))
-  (defun move/parse-act-func-def (def)
+  (defun move/parse-mod-func-def (def)
     (values (first def) (cdr def)))
-  (defun move/gen-act-func-call (def)
-    (multiple-value-bind (name args-rest) (move/parse-act-func-def def)
+  (defun move/gen-mod-func-call (def)
+    (multiple-value-bind (name args-rest) (move/parse-mod-func-def def)
       (append (list name) '(board curr-check) args-rest))))
-(defmacro defmove (name type (&rest patterns) (&rest actions))
+(defmacro defmove (name type (&rest predicates) (&rest modifiers))
   `(setf (getf *moves* ',name)  
-         (make-instance 
-          'move 
+         (make-instance 'move
           :predicate (lambda (board curr-check source target)
-                       (and ,@(loop for p in patterns
+                       (and ,@(loop for p in predicates
                                  collecting (move/gen-pred-func-call p))))
-          :action (lambda (board curr-check source target)
-                   ,@(loop for a in actions
-                        collecting (move/gen-act-func-call a))))))
+          :modifier (lambda (board curr-check source target)
+                      ,@(loop for m in modifiers
+                           collecting (move/gen-mod-func-call m))))))
 (defmove basic :simple
     ((square-has-same-check-p source t) ;; can be removed ?
      (square-empty-p target t)     ;; 
