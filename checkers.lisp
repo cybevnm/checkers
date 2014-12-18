@@ -154,7 +154,9 @@
 ;;
 ;; and so on...   
 (defclass move ()
-  ((predicate :initarg :predicate :reader move/predicate)
+  ((recursive :initarg :recursive :reader move/recursive)
+   (mandatory :initarg :mandatory :reader move/mandatory)
+   (predicate :initarg :predicate :reader move/predicate)
    (modifier :initarg :modifier :reader move/modifier)))
 (defparameter *moves* nil)
 (defun move/validp (move board curr-check src-pos tgt-pos)
@@ -177,22 +179,25 @@
   (defun move/gen-mod-func-call (def)
     (multiple-value-bind (name args-rest) (move/parse-mod-func-def def)
       (append (list name) '(board curr-check) args-rest))))
-(defmacro defmove (name type (&rest predicates) (&rest modifiers))
+(defmacro defmove (name (&rest attributes) (&rest predicates) (&rest modifiers))
   `(setf (getf *moves* ',name)  
-         (make-instance 'move
+         (make-instance 
+          'move
+          :recursive (member 'recursive ',attributes)
+          :mandatory (member 'mandatory ',attributes)
           :predicate (lambda (board curr-check source target)
                        (and ,@(loop for p in predicates
                                  collecting (move/gen-pred-func-call p))))
           :modifier (lambda (board curr-check source target)
                       ,@(loop for m in modifiers
                            collecting (move/gen-mod-func-call m))))))
-(defmove basic :simple
+(defmove basic ()
     ((square-has-same-check-p source t) ;; can be removed ?
      (square-empty-p target t)     ;; 
      (hor-distance source target 1)
      (ver-forward-distance source target 1))
     ((move-check source target)))
-(defmove attack :recursive
+(defmove attack (recursive mandatory)
     ((square-has-same-check-p source t) ;; can be removed ?
      (square-empty-p target t)         ;; 
      (hor-distance source target 2)
