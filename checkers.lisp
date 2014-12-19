@@ -7,7 +7,9 @@
         :alexandria
         :optima))
 (in-package checkers)
-
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun handle-slime-requests ()
   #+swank
   (let ((connection (or swank::*emacs-connection* 
@@ -16,6 +18,9 @@
     ;;  (swank::handle-requests connection t))))
     (when connection      
       (swank::handle-requests connection t))))
+(defun cons-eql-p (a b)
+  (and (eql (car a) (car b))
+       (eql (cdr a) (cdr b))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; board ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -109,6 +114,32 @@
   (ecase square
     (:white-check :up)
     (:black-check :down)))
+(defun board/actions (board check &key src tgt) 
+  (let ((result))
+    (labels ((moves-actions (src tgt)
+               (doplist (_ move *moves*)
+                 (when (move/validp move board check src tgt)
+                   (push (make-instance 'action :move move :src src :tgt tgt)
+                         result))))
+             (actions ()
+               (doboard (src-x src-y _ board)
+                 (doboard (tgt-x tgt-y _ board)
+                   (moves-actions (cons src-x src-y) 
+                                  (cons tgt-x tgt-y))))))
+      (actions)
+      (when (member-if #'move/mandatoryp result :key #'action/move)
+        (setf result (remove-if-not #'move/mandatoryp result :key #'action/move)))
+      (when src
+        (setf result 
+              (remove-if-not (curry #'cons-eql-p src) result :key #'action/src)))
+      (when tgt
+        (setf result 
+              (remove-if-not (curry #'cons-eql-p tgt) result :key #'action/tgt))))
+      result)))
+(defun board/action-valid-p (move board check src tgt )
+  (member (make-instance 'action :move move :src src :tgt tgt)
+          (board/actions board check :src src :tgt tgt)
+          :test #'action/eql))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -154,8 +185,8 @@
 ;;
 ;; and so on...   
 (defclass move ()
-  ((recursive :initarg :recursive :reader move/recursive)
-   (mandatory :initarg :mandatory :reader move/mandatory)
+  ((recursive :initarg :recursive :reader move/recursivep)
+   (mandatory :initarg :mandatory :reader move/mandatoryp)
    (predicate :initarg :predicate :reader move/predicate)
    (modifier :initarg :modifier :reader move/modifier)))
 (defparameter *moves* nil)
@@ -206,6 +237,17 @@
     ((kill-half-way-check source target)
      (move-check source target)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; action ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defclass action ()
+  ((move :initarg :move :reader action/move)
+   (src :initarg :src :reader action/src)
+   (tgt :initarg :tgt :reader action/tgt)))
+(defun action/eql (a b)
+  (and (eql (action/move a) (action/move b))
+       (cons-eql-p (action/src a) (action/src b))
+       (cons-eql-p (action/tgt a) (action/tgt b))))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; ai ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass node ()
@@ -215,9 +257,13 @@
    (children :initarg :children :initform nil :accessor node/children)
    (depth :initarg :depth :initform 0 :reader node/depth)
    (rate :initarg :rate :reader node/rate)
-   (src :initarg :src :reader node/src)
-   (tgt :initarg :tgt :reader node/tgt)
-   (move :initarg :move :reader node/move)))
+   (action :initarg :action :reader node/action)))
+(defun node/src (n)
+  (action/src (node/action n)))
+(defun node/tgt (n)
+  (action/tgt (node/action n)))
+(defun node/move (n)
+  (action/move (node/action n)))
 (defun ai/rate-board (board curr-check)
   (let ((rate 0))
     (doboard (x y square board)
@@ -225,28 +271,25 @@
         (incf rate (if (eql square curr-check) 1 -1))))
     rate))
 (defun ai/enum-moves (parent)
-  (let ((nodes)
-        (board (node/board parent))
-        (curr-check (board/opposite-check (node/check parent)))
-        (curr-depth (1+ (node/depth parent))))
-    (doplist (key move *moves*)
-      (doboard (src-x src-y src-square board)
-        (doboard (tgt-x tgt-y tgt-square board)
-          (let ((src (cons src-x src-y))
-                (tgt (cons tgt-x tgt-y)))
-            (when (move/validp move board curr-check src tgt)
-              (alet (board/clone board)
-                (move/apply move it curr-check src tgt)
-                (push (make-instance 'node
-                                     :parent parent
-                                     :board it 
-                                     :check curr-check
-                                     :depth curr-depth
-                                     :rate (ai/rate-board it :black-check)
-                                     :src src
-                                     :tgt tgt
-                                     :move move)
-                      nodes)))))))
+  (let* ((nodes)
+         (board (node/board parent))
+         (check (board/opposite-check (node/check parent)))
+         (depth (1+ (node/depth parent)))
+         (actions (board/actions board check)))
+    (dolist (a actions)
+      (alet (board/clone board)
+        (move/apply (action/move a) it check (action/src a) (action/tgt a))
+        (push (make-instance 'node
+                             :parent parent
+                             :board it 
+                             :check check
+                             :depth depth
+                             :rate (ai/rate-board it :black-check)
+                             :action (make-instance 'action
+                                                    :src (action/src a)
+                                                    :tgt (action/tgt a)
+                                                    :move (action/move a)))
+              nodes)))
     nodes))
 (defparameter *max-depth* 4)
 (defun ai/build-subtree (parent)
@@ -342,21 +385,15 @@
                                  square-w square-h
                                  sdl:*red*)))
 (defun window/draw-move-variants (board square-w square-h)
-  (doboard (x y square board)
-    (doplist (key move *moves*)
-      (let ((src-square (board/square board *src-square-x* *src-square-y*)))
-        (when (and (eql src-square :white-check) 
-                   (move/validp move 
-                                board 
-                                src-square
-                                (cons *src-square-x* *src-square-y*) 
-                                (cons x y)))
-          (sdl:draw-box-* (* x square-w)
-                          (* (window/calc-inv-y board y) square-h)
-                          square-w 
-                          square-h
-                          :color (sdl:color :r 60 :g 60 :b 60)
-                          :alpha 125))))))
+  (dolist (a (board/actions board 
+                            :white-check 
+                            :src (cons *src-square-x* *src-square-y*)))
+    (sdl:draw-box-* (* (car (action/tgt a)) square-w)
+                    (* (window/calc-inv-y board (cdr (action/tgt a))) square-h)
+                    square-w 
+                    square-h
+                    :color (sdl:color :r 60 :g 60 :b 60)
+                    :alpha 125)))
 (defun window/draw-background (board square-w square-h)
   (doboard (x y square board)
       (let* ((inv-y (window/calc-inv-y board y))
@@ -392,10 +429,10 @@
     (setf *tgt-square-x* *src-square-x*
           *tgt-square-y* *src-square-y*)))
 (defun window/apply-move-if-possible (board)
-  (doplist (key move *moves*)
+  (doplist (_ move *moves*)
     (let ((src (cons *src-square-x* *src-square-y*))
           (tgt (cons *tgt-square-x* *tgt-square-y*)))
-      (when (move/validp move board :white-check src tgt)
+      (when (board/action-valid-p move board :white-check src tgt)
         (move/apply move board :white-check src tgt)
         (setf *src-square-x* *tgt-square-x*
               *src-square-y* *tgt-square-y*)
