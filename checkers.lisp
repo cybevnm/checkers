@@ -114,7 +114,7 @@
   (ecase square
     (:white-check :up)
     (:black-check :down)))
-(defun board/actions (board check &key src tgt) 
+(defun board/actions (board check &key src tgt recursive-action)
   (let ((result))
     (labels ((moves-actions (src tgt)
                (doplist (_ move *moves*)
@@ -134,11 +134,26 @@
               (remove-if-not (curry #'cons-eql-p src) result :key #'action/src)))
       (when tgt
         (setf result 
-              (remove-if-not (curry #'cons-eql-p tgt) result :key #'action/tgt))))
-      result)))
-(defun board/action-valid-p (move board check src tgt )
+              (remove-if-not (curry #'cons-eql-p tgt) result :key #'action/tgt)))
+      (when recursive-action
+        (setf result
+              (remove-if-not (lambda (a)
+                               (and (eq (action/move recursive-action) (action/move a))
+                                    (if (action/src recursive-action)
+                                        (cons-eql-p (action/src recursive-action) (action/src a))
+                                        t)
+                                    (if (action/tgt recursive-action)
+                                        (cons-eql-p (action/tgt recursive-action) (action/tgt a))
+                                        t)))
+                             result))))
+      result))
+(defun board/action-valid-p (move board check &key src tgt recursive-action)
   (member (make-instance 'action :move move :src src :tgt tgt)
-          (board/actions board check :src src :tgt tgt)
+          (board/actions board
+                         check
+                         :src src
+                         :tgt tgt
+                         :recursive-action recursive-action)
           :test #'action/eql))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -193,7 +208,13 @@
 (defun move/validp (move board curr-check src-pos tgt-pos)
   (funcall (move/predicate move) board curr-check src-pos tgt-pos))
 (defun move/apply (move board curr-check src-pos tgt-pos)
-  (funcall (move/modifier move) board curr-check src-pos tgt-pos))
+  "Returns t if move is recursive and should be continued"
+  (flet ((valid-for-any-pos-p (src-pos2)
+           (doboard (x y _ board)
+             (when (move/validp move board curr-check src-pos2 (cons x y))
+               (return-from valid-for-any-pos-p t)))))
+    (funcall (move/modifier move) board curr-check src-pos tgt-pos)
+    (and (move/recursivep move) (valid-for-any-pos-p tgt-pos))))
 (defun move/remove (name)
   (remf *moves* name))
 (eval-when (:compile-toplevel :load-toplevel)
@@ -241,8 +262,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass action ()
   ((move :initarg :move :reader action/move)
-   (src :initarg :src :reader action/src)
-   (tgt :initarg :tgt :reader action/tgt)))
+   (src :initarg :src :initform nil :reader action/src)
+   (tgt :initarg :tgt :initform nil :reader action/tgt))
+  (:documentation "Binds move to source and target positions.
+                   Note that both source and target are optional
+                   and can be nil"))
 (defun action/eql (a b)
   (and (eql (action/move a) (action/move b))
        (cons-eql-p (action/src a) (action/src b))
@@ -270,12 +294,12 @@
       (when 
         (incf rate (if (eql square curr-check) 1 -1))))
     rate))
-(defun ai/enum-moves (parent)
+(defun ai/enum-moves (parent &key recursive-action)
   (let* ((nodes)
          (board (node/board parent))
          (check (board/opposite-check (node/check parent)))
          (depth (1+ (node/depth parent)))
-         (actions (board/actions board check)))
+         (actions (board/actions board check :recursive-action recursive-action)))
     (dolist (a actions)
       (alet (board/clone board)
         (move/apply (action/move a) it check (action/src a) (action/tgt a))
@@ -292,19 +316,19 @@
               nodes)))
     nodes))
 (defparameter *max-depth* 4)
-(defun ai/build-subtree (parent)
+(defun ai/build-subtree (parent &key recursive-action)
   (unless (eql (node/depth parent) *max-depth*)
-    (let ((nodes (ai/enum-moves parent)))
+    (let ((nodes (ai/enum-moves parent :recursive-action recursive-action)))
       (setf (node/children parent) nodes) 
       (dolist (n nodes)
-        (ai/build-subtree n)))))
+        (ai/build-subtree n :recursive-action recursive-action)))))
 
-(defun ai/build-tree (board)
+(defun ai/build-tree (board &key recursive-action)
   (alet (make-instance 'node 
                         :check :white-check
                         :board board
                         :rate (ai/rate-board board :black-check))
-    (ai/build-subtree it)
+    (ai/build-subtree it :recursive-action recursive-action)
     it))
 (defun ai/rate-subtree (parent)
   (let* ((children (node/children parent)))
@@ -327,13 +351,22 @@
   (alet (node/children parent)
     (reduce #'ai/max-rate-subtree it)))
 (defun ai/process (board)
-  (let* ((tree (ai/build-tree board))
-         (node (ai/find-best-node tree)))
-    (move/apply (node/move node) 
-                board
-                :black-check
-                (node/src node)
-                (node/tgt node))))
+  (let ((curr-recursive-action))
+    (loop
+       do (let* ((tree (ai/build-tree board
+                                      :recursive-action curr-recursive-action))
+                 (node (ai/find-best-node tree))
+                 (move (node/move node))
+                 (recursive (move/apply move
+                                        board
+                                        :black-check
+                                        (node/src node)
+                                        (node/tgt node))))
+            (setf curr-recursive-action (and recursive
+                                             (make-instance 'action
+                                                            :move move
+                                                            :src (node/tgt node)))))
+       while curr-recursive-action)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; window ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -349,9 +382,10 @@
 (defparameter *src-square-y* 3)
 (defparameter *tgt-square-x* nil)
 (defparameter *tgt-square-y* nil)
+(defparameter *player-recursive-action* nil)
+(defparameter *board* (make-board))
 (defun window/tgt-square-defined-p ()
   (and *tgt-square-x* *tgt-square-y*))
-(defparameter *board* (make-board))
 (defun window/calc-square-width (board)
   (round (/ *window-width* (board/width board))))
 (defun window/calc-square-height (board)
@@ -387,7 +421,8 @@
 (defun window/draw-move-variants (board square-w square-h)
   (dolist (a (board/actions board 
                             :white-check 
-                            :src (cons *src-square-x* *src-square-y*)))
+                            :src (cons *src-square-x* *src-square-y*)
+                            :recursive-action *player-recursive-action*))
     (sdl:draw-box-* (* (car (action/tgt a)) square-w)
                     (* (window/calc-inv-y board (cdr (action/tgt a))) square-h)
                     square-w 
@@ -432,11 +467,20 @@
   (doplist (_ move *moves*)
     (let ((src (cons *src-square-x* *src-square-y*))
           (tgt (cons *tgt-square-x* *tgt-square-y*)))
-      (when (board/action-valid-p move board :white-check src tgt)
-        (move/apply move board :white-check src tgt)
+      (when (board/action-valid-p move
+                                  board
+                                  :white-check
+                                  :src src
+                                  :tgt tgt
+                                  :recursive-action *player-recursive-action*)
         (setf *src-square-x* *tgt-square-x*
               *src-square-y* *tgt-square-y*)
-        (ai/process *board*))))
+        (let ((recursive-move (move/apply move *board* :white-check src tgt)))
+          (setf *player-recursive-action* (if recursive-move
+                                              (make-instance 'action :move move :src tgt)
+                                              nil))
+          (unless recursive-move
+            (ai/process *board*))))))
   (window/finalize-move))
 (defun window/init-or-apply-move (board)
   (if (window/tgt-square-defined-p)
