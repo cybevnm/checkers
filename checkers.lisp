@@ -5,7 +5,8 @@
   (:use :cl
         :anaphora
         :alexandria
-        :optima))
+        :optima
+        :arrow-macros))
 (in-package checkers)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -22,12 +23,37 @@
   (and (eql (car a) (car b))
        (eql (cdr a) (cdr b))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; check ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defparameter *white-checks* '(:white-check :white-king))
+(defparameter *black-checks* '(:black-check :black-king))
+(defun check/checks-for-color (color)
+  (ecase color
+    (:white *white-checks*)
+    (:black *black-checks*)))
+(defun check/color (check)
+  (cond
+    ((member check *white-checks*) :white)
+    ((member check *black-checks*) :black)
+    (t nil)))
+(defun opposite-color (color)
+  (ecase color
+    (:white :black)
+    (:black :white)
+    (nil nil)))
+(defun check/opposite-color (check)
+  (opposite-color (check/color check)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; board ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass board ()
   ((squares :initarg :squares :reader board/squares)))
 (defun board/square (board x y)
   (aref (board/squares board) x y))
+(defun board/check (board x y)
+  (alet (board/square board x y)
+    (assert (not (eq it :empty)))
+    it))
 (defun board/square-or-nil (board x y)
   (when (and (< -1 x (board/width board))
              (< -1 y (board/height board)))
@@ -38,10 +64,6 @@
   (symbol-macrolet ((square (board/square board x y)))
     (assert (not (eq square :empty)))
     (setf square :empty)))
-(defun board/opposite-check (square)
-  (ecase square
-    (:white-check :black-check)
-    (:black-check :white-check)))
 (defun board/color (x y)
   (if (xor (evenp x) (evenp y)) :white :black))
 (defun $board/dimension (board axis-number)
@@ -74,9 +96,9 @@
                      (:empty :empty :empty :empty :empty :empty :empty)
                      (:empty :empty :empty :empty :white-check :empty :empty)
                      (:empty :empty :empty :black-check :empty :empty :empty)
-                     (:empty :empty :empty :empty :white-check :empty :empty)
                      (:empty :empty :empty :empty :empty :empty :empty)
-                     (:empty :empty :empty :empty :empty :empty :white-check))))
+                     (:empty :empty :empty :empty :empty :empty :empty)
+                     (:empty :empty :empty :empty :empty :empty :white-king))))
     (doboard (x y square board)
       (setf square (aref squares x y)))
     board))
@@ -85,24 +107,24 @@
     (doboard (x y square it)
       (setf square (board/square board x y)))
     it))
-(defparameter *squares-chars* '(:white "□" :black "■"))
-(defparameter *inverted-squares-chars* '(:white "■" :black "□"))
-(defun $board/square-char (color &key invert-colors)
-  (getf (if invert-colors *inverted-squares-chars* *squares-chars*) color))
-(defparameter *check-chars* '(:white-check "○" :black-check "●"))
-(defparameter *inverted-check-chars* '(:white-check "●" :black-check "○"))
-(defun $board/check-char (check &key invert-colors)
-  (getf (if invert-colors *inverted-check-chars* *check-chars*) check))
-(defun $board/char (board x y &key invert-colors)
-  (alet (board/square board x y)
-    (if (eql it :empty)
-        ($board/square-char (board/color x y) :invert-colors invert-colors)
-        ($board/check-char it :invert-colors invert-colors))))
-(defun board/print (board &key invert-colors)
-  (doboard (x y square board)
-    (let ((inv-y (- (board/height board) y 1)))
-      (when (zerop x) (format t "~&"))
-      (format t "~A " ($board/char board x inv-y :invert-colors invert-colors)))))
+;; (defparameter *squares-chars* '(:white "□" :black "■"))
+;; (defparameter *inverted-squares-chars* '(:white "■" :black "□"))
+;; (defun $board/square-char (color &key invert-colors)
+;;   (getf (if invert-colors *inverted-squares-chars* *squares-chars*) color))
+;; (defparameter *check-chars* '(:white-check "○" :black-check "●"))
+;; (defparameter *inverted-check-chars* '(:white-check "●" :black-check "○"))
+;; (defun $board/check-char (check &key invert-colors)
+;;   (getf (if invert-colors *inverted-check-chars* *check-chars*) check))
+;; (defun $board/char (board x y &key invert-colors)
+;;   (alet (board/square board x y)
+;;     (if (eql it :empty)
+;;         ($board/square-char (board/color x y) :invert-colors invert-colors)
+;;         ($board/check-char it :invert-colors invert-colors))))
+;; (defun board/print (board &key invert-colors)
+;;   (doboard (x y square board)
+;;     (let ((inv-y (- (board/height board) y 1)))
+;;       (when (zerop x) (format t "~&"))
+;;       (format t "~A " ($board/char board x inv-y :invert-colors invert-colors)))))
 (defun board/move-check (board src-x src-y tgt-x tgt-y)
   (symbol-macrolet ((src-square (board/square board src-x src-y))
                     (tgt-square (board/square board tgt-x tgt-y)))
@@ -112,8 +134,8 @@
     (setf src-square :empty)))
 (defun board/check-direction (square)
   (ecase square
-    (:white-check :up)
-    (:black-check :down)))
+    ((:white-check :white-king) :up)
+    ((:black-check :black-king) :down)))
 (defun board/actions (board check &key src tgt recursive-action)
   (let ((result))
     (labels ((moves-actions (src tgt)
@@ -146,20 +168,48 @@
                                         (cons-eql-p (action/tgt recursive-action) (action/tgt a))
                                         t)))
                              result))))
-      result))
-(defun board/action-valid-p (move board check &key src tgt recursive-action)
+    result))
+(defun board/actions-for-color (board color &key src tgt recursive-action)
+  (->> (check/checks-for-color color)
+    (mapcar (lambda (check)
+              (board/actions board
+                             check
+                             :src src
+                             :tgt tgt
+                             :recursive-action recursive-action)))
+    (reduce #'append)))
+(defun $board/action-valid-p (actions move &key src tgt)
   (member (make-instance 'action :move move :src src :tgt tgt)
-          (board/actions board
-                         check
-                         :src src
-                         :tgt tgt
-                         :recursive-action recursive-action)
+          actions
           :test #'action/eql))
+(defun board/action-valid-p (move board check &key src tgt recursive-action)
+  ($board/action-valid-p (board/actions board
+                                        check
+                                        :src src
+                                        :tgt tgt
+                                        :recursive-action recursive-action)
+                         move
+                         :src src
+                         :tgt tgt))
+(defun board/action-valid-for-color-p (move board color &key src tgt recursive-action)
+  ($board/action-valid-p (board/actions-for-color board
+                                                 color
+                                                 :src src
+                                                 :tgt tgt
+                                                 :recursive-action recursive-action)
+                         move
+                         :src src
+                         :tgt tgt))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun square-has-same-check-p (board curr-check pos)
-  (eql (board/square board (car pos) (cdr pos)) curr-check))
+(defun square-contains-friendly-check-p (board curr-check pos)
+  (alet (board/square board (car pos) (cdr pos))
+    (and (eq (check/color it) (check/color curr-check)))))
+(defun square-contains-friendly-king-p (board curr-check pos)
+  (alet (board/square board (car pos) (cdr pos))
+    (and (eq (check/color it) (check/color curr-check))
+         (if (member curr-check '(:white-king :black-king)) t nil))))
 (defun square-empty-p (board curr-check pos)
   (eql (board/square board (car pos) (cdr pos)) :empty))
 (defun distance (src-pos tgt-pos)
@@ -175,30 +225,64 @@
       (:down (- it)))))
 (defun ver-distance (board curr-check src-pos tgt-pos)
   (abs (cdr (distance src-pos tgt-pos))))
+(defun hor-and-ver-distances-are-the-same (board curr-check src-pos tgt-pos)
+  (declare (ignore board curr-check))
+  (= (abs (- (car src-pos) (car tgt-pos)))
+     (abs (- (cdr src-pos) (cdr tgt-pos)))))
 (defun half-distance (src-pos tgt-pos)
   (alet (distance src-pos tgt-pos)
     (cons (/ (car it) 2) (/ (cdr it) 2))))
 (defun shifted-pos (src-pos vec)
   (cons (+ (car src-pos) (car vec)) 
         (+ (cdr src-pos) (cdr vec))))
-(defun half-way-square-has-opposite-check-p (board curr-check src-pos tgt-pos)
-  (alet (shifted-pos src-pos (half-distance src-pos tgt-pos))
-    (eql (board/square-or-nil board (car it) (cdr it))
-         (board/opposite-check curr-check))))
+(defun map-line-squares (board src-pos tgt-pos func)
+  (let ((min-x (min (car src-pos) (car tgt-pos)))
+        (min-y (min (cdr src-pos) (cdr tgt-pos)))
+        (max-x (max (car src-pos) (car tgt-pos)))
+        (max-y (max (cdr src-pos) (cdr tgt-pos))))
+    (loop
+       for x from (1+ min-x) to (1- max-x)
+       for y from (1+ min-y) to (1- max-y)
+       do (funcall func x y (board/square board x y)))))
+(defun line-contains-one-enemy-check-p (board curr-check src-pos tgt-pos)
+  (let ((enemy-checks-num 0))
+    (map-line-squares board
+                      src-pos
+                      tgt-pos
+                      (lambda (x y square)
+                        (declare (ignore x y))
+                        (when (and (eq (check/color square)
+                                       (check/opposite-color curr-check)))
+                          (incf enemy-checks-num))))
+    (= enemy-checks-num 1)))
+(defun line-contains-enemy-check-before-target-p (board curr-check src-pos tgt-pos)
+  (let ((dx (alet (- (car src-pos) (car tgt-pos)) (/ it (abs it))))
+        (dy (alet (- (cdr src-pos) (cdr tgt-pos)) (/ it (abs it)))))
+    (eq (check/color (board/square board (+ (car tgt-pos) dx) (+ (cdr tgt-pos) dy)))
+        (check/opposite-color curr-check))))
+(defun line-contains-no-friendly-checks-p (board curr-check src-pos tgt-pos)
+  (let ((friendly-checks-num 0))
+    (map-line-squares board
+                      src-pos
+                      tgt-pos
+                      (lambda (x y square)
+                        (declare (ignore x y))
+                        (when (and (eq (check/color square)
+                                       (check/color curr-check)))
+                          (incf friendly-checks-num))))
+    (= friendly-checks-num 0)))
 (defun move-check (board curr-check src-pos tgt-pos)
   (board/move-check board 
                     (car src-pos) (cdr src-pos) 
                     (car tgt-pos) (cdr tgt-pos)))
-(defun kill-half-way-check (board curr-check src-pos tgt-pos)
-  (alet (shifted-pos src-pos (half-distance src-pos tgt-pos))
-    (board/kill-check board (car it) (cdr it))))
-;; TODO: seems like it's easire just define moves hierarcy
-;;
-;;            move
-;;           /    \
-;;   basic-move  attack-move
-;;
-;; and so on...   
+(defun kill-enemy-checks-on-line (board curr-check src-pos tgt-pos)
+  (map-line-squares board
+                    src-pos
+                    tgt-pos
+                    (lambda (x y square)
+                      (when (and (eq (check/color square)
+                                     (check/opposite-color curr-check)))
+                        (board/kill-check board x y)))))
 (defclass move ()
   ((recursive :initarg :recursive :reader move/recursivep)
    (mandatory :initarg :mandatory :reader move/mandatoryp)
@@ -244,18 +328,27 @@
                       ,@(loop for m in modifiers
                            collecting (move/gen-mod-func-call m))))))
 (defmove basic ()
-    ((square-has-same-check-p source t) ;; can be removed ?
-     (square-empty-p target t)     ;; 
+    ((square-contains-friendly-check-p source t)
+     (square-empty-p target t)
      (hor-distance source target 1)
      (ver-forward-distance source target 1))
     ((move-check source target)))
-(defmove attack (recursive mandatory)
-    ((square-has-same-check-p source t) ;; can be removed ?
-     (square-empty-p target t)         ;; 
+(defmove check-attack (recursive mandatory)
+    ((square-contains-friendly-check-p source t)
+     (square-empty-p target t)
      (hor-distance source target 2)
      (ver-distance source target 2)
-     (half-way-square-has-opposite-check-p source target t))
-    ((kill-half-way-check source target)
+     (line-contains-one-enemy-check-p source target t))
+    ((kill-enemy-checks-on-line source target)
+     (move-check source target)))
+(defmove king-attack (recursive mandatory)
+    ((square-contains-friendly-king-p source t)
+     (square-empty-p target t)
+     (hor-and-ver-distances-are-the-same source target t)
+     (line-contains-one-enemy-check-p source target t)
+     (line-contains-enemy-check-before-target-p source target t)
+     (line-contains-no-friendly-checks-p source target t))
+    ((kill-enemy-checks-on-line source target)
      (move-check source target)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; action ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -277,7 +370,7 @@
 (defclass node ()
   ((parent :initarg :parent :initform nil)
    (board :initarg :board :reader node/board)
-   (check :initarg :check :reader node/check)
+   (color :initarg :color :reader node/color)
    (children :initarg :children :initform nil :accessor node/children)
    (depth :initarg :depth :initform 0 :reader node/depth)
    (rate :initarg :rate :reader node/rate)
@@ -288,25 +381,30 @@
   (action/tgt (node/action n)))
 (defun node/move (n)
   (action/move (node/action n)))
-(defun ai/rate-board (board curr-check)
+(defun ai/rate-board (board curr-color)
   (let ((rate 0))
     (doboard (x y square board)
-      (when 
-        (incf rate (if (eql square curr-check) 1 -1))))
+      (incf rate (if (eql (check/color square) curr-color) 1 -1)))
     rate))
 (defun ai/enum-moves (parent &key recursive-action)
   (let* ((nodes)
          (board (node/board parent))
-         (check (board/opposite-check (node/check parent)))
+         (color (opposite-color (node/color parent)))
          (depth (1+ (node/depth parent)))
-         (actions (board/actions board check :recursive-action recursive-action)))
+         (actions (board/actions-for-color board
+                                           color
+                                           :recursive-action recursive-action)))
     (dolist (a actions)
       (alet (board/clone board)
-        (move/apply (action/move a) it check (action/src a) (action/tgt a))
+        (move/apply (action/move a)
+                    it
+                    (board/check it (car (action/src a)) (cdr (action/src a)))
+                    (action/src a)
+                    (action/tgt a))
         (push (make-instance 'node
                              :parent parent
                              :board it 
-                             :check check
+                             :color color
                              :depth depth
                              :rate (ai/rate-board it :black-check)
                              :action (make-instance 'action
@@ -325,20 +423,20 @@
 
 (defun ai/build-tree (board &key recursive-action)
   (alet (make-instance 'node 
-                        :check :white-check
+                        :color :white
                         :board board
-                        :rate (ai/rate-board board :black-check))
+                        :rate (ai/rate-board board :black))
     (ai/build-subtree it :recursive-action recursive-action)
     it))
 (defun ai/rate-subtree (parent)
   (let* ((children (node/children parent)))
     (if children
-        (ecase (node/check parent)
-          (:black-check 
+        (ecase (node/color parent)
+          (:black 
            (reduce (lambda (a b) (min a (ai/rate-subtree b)))
                    children
                    :initial-value most-positive-fixnum))
-          (:white-check 
+          (:white 
            (reduce (lambda (a b) (max a (ai/rate-subtree b)))
                    children
                    :initial-value most-negative-fixnum)))
@@ -359,7 +457,9 @@
                  (move (node/move node))
                  (recursive (move/apply move
                                         board
-                                        :black-check
+                                        (board/check board
+                                                     (car (node/src node))
+                                                     (cdr (node/src node)))
                                         (node/src node)
                                         (node/tgt node))))
             (setf curr-recursive-action (and recursive
@@ -375,9 +475,13 @@
 (defparameter *square-color* (list :white (sdl:color :r #xE8 :g #xD0 :b #xAA)
                                    :black (sdl:color :r #xA6 :g #x7D :b #x5D)))
 (defparameter *check-color* (list :white-check (sdl:color :r #xF6 :g #xC6 :b #x48)
-                                  :black-check (sdl:color :r #x7A :g #x50 :b #x44)))
+                                  :white-king (sdl:color :r #xF6 :g #xC6 :b #x48)
+                                  :black-check (sdl:color :r #x7A :g #x50 :b #x44)
+                                  :black-king (sdl:color :r #x7A :g #x50 :b #x44)))
 (defparameter *check-pin-color* (list :white-check (sdl:color :r #xFF :g #xD6 :b #x58)
-                                      :black-check (sdl:color :r #x8A :g #x60 :b #x54)))
+                                      :white-king (sdl:color :r #xFF :g #xD6 :b #x58)
+                                      :black-check (sdl:color :r #x8A :g #x60 :b #x54)
+                                      :black-king (sdl:color :r #x8A :g #x60 :b #x54)))
 (defparameter *src-square-x* 3)
 (defparameter *src-square-y* 3)
 (defparameter *tgt-square-x* nil)
@@ -419,16 +523,19 @@
                                  square-w square-h
                                  sdl:*red*)))
 (defun window/draw-move-variants (board square-w square-h)
-  (dolist (a (board/actions board 
-                            :white-check 
-                            :src (cons *src-square-x* *src-square-y*)
-                            :recursive-action *player-recursive-action*))
-    (sdl:draw-box-* (* (car (action/tgt a)) square-w)
-                    (* (window/calc-inv-y board (cdr (action/tgt a))) square-h)
-                    square-w 
-                    square-h
-                    :color (sdl:color :r 60 :g 60 :b 60)
-                    :alpha 125)))
+  (let ((src-square (board/square board *src-square-x* *src-square-y*)))
+    (when (and (not (eq src-square :empty))
+               (eq (check/color src-square) :white))
+      (dolist (a (board/actions board 
+                                src-square
+                                :src (cons *src-square-x* *src-square-y*)
+                                :recursive-action *player-recursive-action*))
+        (sdl:draw-box-* (* (car (action/tgt a)) square-w)
+                        (* (window/calc-inv-y board (cdr (action/tgt a))) square-h)
+                        square-w 
+                        square-h
+                        :color (sdl:color :r 60 :g 60 :b 60)
+                        :alpha 125)))))
 (defun window/draw-background (board square-w square-h)
   (doboard (x y square board)
       (let* ((inv-y (window/calc-inv-y board y))
@@ -460,7 +567,8 @@
             *src-square-y*
             (clamp (+ *src-square-y* dy) 0 (1- (board/height board))))))
 (defun window/init-move (board)
-  (when (eql (board/square board *src-square-x* *src-square-y*) :white-check)
+  (when (eq (check/color (board/square board *src-square-x* *src-square-y*))
+            :white)
     (setf *tgt-square-x* *src-square-x*
           *tgt-square-y* *src-square-y*)))
 (defun window/apply-move-if-possible (board)
@@ -469,7 +577,8 @@
           (tgt (cons *tgt-square-x* *tgt-square-y*)))
       (when (board/action-valid-p move
                                   board
-                                  :white-check
+                                  (board/check board *src-square-x*
+                                               *src-square-y*)
                                   :src src
                                   :tgt tgt
                                   :recursive-action *player-recursive-action*)

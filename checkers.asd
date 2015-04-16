@@ -4,7 +4,7 @@
                :anaphora
                :alexandria
                :optima
-               
+               :arrow-macros               
                )
   :components ((:file "checkers")))
                 
