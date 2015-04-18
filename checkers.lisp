@@ -92,28 +92,43 @@
 (defun board/make-empty (&optional (w 10) (h 10))
   (make-instance 'board 
                  :squares (make-array `(,w ,h) :initial-element :empty)))
-;;; TODO: rename board/make
-(defun make-board ()
-  (alet (board/make-empty)
-    (doboard (x y square it)
-      (setf square 
-            (cond
-              ((and (< y 4) (eql (board/color x y) :black)) :white-check)
-              ((and (> y 5) (eql (board/color x y) :black)) :black-check)
-              (t :empty))))
-    it))
-(defun make-board-2 ()
-  (let ((board (board/make-empty 7 7))
-        (squares #2A((:empty :empty :empty :empty :empty :empty :empty)
-                     (:empty :empty :empty :empty :empty :empty :empty)
-                     (:empty :empty :empty :empty :white-check :empty :empty)
-                     (:empty :empty :empty :black-check :empty :empty :empty)
-                     (:empty :empty :empty :empty :empty :empty :empty)
-                     (:empty :empty :empty :empty :empty :empty :empty)
-                     (:empty :empty :empty :empty :empty :empty :white-king))))
-    (doboard (x y square board)
-      (setf square (aref squares x y)))
-    board))
+(defun board/char-to-square (c)
+  (ecase c
+    (#\w     :white-check)
+    (#\W     :white-king)
+    (#\Space :empty)
+    (#\b     :black-check)
+    (#\B     :black-king)))
+(defun board/make (src)
+  (assert (> (length src) 0))
+  (let* ((w (length (first src)))
+           (h (length src))
+           (board (board/make-empty w h)))
+      (dolist (row src)
+        (assert (= (length row) w)))
+      (loop for y from 0 to (1- h)
+         do (loop for x from 0 to (1- w)
+               do (setf (board/square board x (- h y 1))
+                        (board/char-to-square (char (nth y src) x)))))
+      board))
+(defun board/make-1 ()
+  (board/make '(" b b b b b"
+                "b b b b b "
+                " b b b b b"
+                "b b b b b "
+                "          "
+                "          "
+                " w w w w w"
+                "w w w w w "
+                " w w w w w"
+                "w w w w w ")))
+(defun board/make-2 ()
+  (board/make '(" b b b"
+                "      "
+                "      "
+                "      "
+                "      "
+                "w w w ")))
 (defun board/clone (board)
   (alet (board/make-empty (board/width board) (board/height board))
     (doboard (x y square it)
@@ -529,7 +544,7 @@
 (defparameter *tgt-square-x* nil)
 (defparameter *tgt-square-y* nil)
 (defparameter *player-recursive-action* nil)
-(defparameter *board* (make-board))
+(defparameter *board* (board/make-1))
 (defun window/tgt-square-defined-p ()
   (and *tgt-square-x* *tgt-square-y*))
 (defun window/calc-square-width (board)
