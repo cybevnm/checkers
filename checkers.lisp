@@ -43,6 +43,18 @@
     (nil nil)))
 (defun check/opposite-color (check)
   (opposite-color (check/color check)))
+(defun check/king-for-color (color)
+  (ecase color
+    (:white :white-king)
+    (:black :black-king)))
+(defun check/king-for-check (check)
+  (ecase check
+    (:white-check :white-king)
+    (:black-check :black-king)))
+(defun check/kingp (check)
+  (ecase check
+    ((:white-check :black-check) nil)
+    ((:white-king :black-king) t)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; board ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -136,6 +148,13 @@
   (ecase square
     ((:white-check :white-king) :up)
     ((:black-check :black-king) :down)))
+(defun board/kings-row (board color)
+  (ecase color
+    (:white 0)
+    (:black (1- (board/height board)))))
+(defun board/kings-row-p (board color y)
+  "Return t if y is kings row"
+  (= y (board/kings-row board color)))
 (defun board/actions (board check &key src tgt recursive-action)
   (let ((result))
     (labels ((moves-actions (src tgt)
@@ -284,7 +303,13 @@
 (defun move-check (board curr-check src-pos tgt-pos)
   (board/move-check board 
                     (car src-pos) (cdr src-pos) 
-                    (car tgt-pos) (cdr tgt-pos)))
+                    (car tgt-pos) (cdr tgt-pos))
+  (when (and (not (check/kingp curr-check))
+             (board/kings-row-p board
+                                (check/opposite-color curr-check)
+                                (cdr tgt-pos)))
+    (setf (board/square board (car tgt-pos) (cdr tgt-pos))
+          (check/king-for-check curr-check))))
 (defun kill-enemy-checks-on-line (board curr-check src-pos tgt-pos)
   (map-line-squares board
                     src-pos
