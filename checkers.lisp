@@ -617,8 +617,9 @@
             :white)
     (setf *tgt-square-x* *src-square-x*
           *tgt-square-y* *src-square-y*)))
-(defun window/apply-move-if-possible (board)
-  (doplist (_ move *moves*)
+(defun window/find-first-valid-move (board)
+  
+ (doplist (_ move *moves*)
     (let ((src (cons *src-square-x* *src-square-y*))
           (tgt (cons *tgt-square-x* *tgt-square-y*)))
       (when (board/action-valid-p move
@@ -627,15 +628,33 @@
                                                *src-square-y*)
                                   :src src
                                   :tgt tgt
-                                  :recursive-action *player-recursive-action*)
-        (setf *src-square-x* *tgt-square-x*
-              *src-square-y* *tgt-square-y*)
-        (let ((recursive-move (move/apply move *board* :white-check src tgt)))
-          (setf *player-recursive-action* (if recursive-move
-                                              (make-instance 'action :move move :src tgt)
-                                              nil))
-          (unless recursive-move
-            (ai/process *board*))))))
+                                  :recursive-action *player-recursive-action*)))))
+(defun window/find-first-valid-move (board src tgt)
+  (find-if (lambda (move)
+             (and (eq (type-of move) 'move)
+                  (board/action-valid-p move
+                                        board
+                                        (board/check board
+                                                     *src-square-x*
+                                                     *src-square-y*)
+                                        :src src
+                                        :tgt tgt
+                                        :recursive-action *player-recursive-action*)))
+           *moves*))
+(defun window/apply-move-if-possible (board)
+  (let* ((src (cons *src-square-x* *src-square-y*))
+         (tgt (cons *tgt-square-x* *tgt-square-y*))
+         (move (window/find-first-valid-move board src tgt)))
+    (when move
+      (setf *src-square-x* *tgt-square-x*
+            *src-square-y* *tgt-square-y*)
+      (let ((recursive-move (move/apply move *board* :white-check src tgt)))
+        (setf *player-recursive-action* (and recursive-move
+                                             (make-instance 'action
+                                                            :move move
+                                                            :src tgt)))
+        (unless recursive-move
+          (ai/process *board*)))))
   (window/finalize-move))
 (defun window/init-or-apply-move (board)
   (if (window/tgt-square-defined-p)
