@@ -168,6 +168,8 @@
       (when src
         (setf result 
               (remove-if-not (curry #'cons-eql-p src) result :key #'action/src)))
+      (when (member-if #'move/mandatoryp result :key #'action/move)
+        (setf result (remove-if-not #'move/mandatoryp result :key #'action/move)))
       (when tgt
         (setf result 
               (remove-if-not (curry #'cons-eql-p tgt) result :key #'action/tgt)))
@@ -181,9 +183,7 @@
                                     (if (action/tgt recursive-action)
                                         (cons-eql-p (action/tgt recursive-action) (action/tgt a))
                                         t)))
-                             result)))
-      (when (member-if #'move/mandatoryp result :key #'action/move)
-        (setf result (remove-if-not #'move/mandatoryp result :key #'action/move))))
+                             result))))
     result))
 (defun board/actions-for-color (board color &key src tgt recursive-action)
   (->> (check/checks-for-color color)
