@@ -225,7 +225,7 @@
 (defun square-contains-friendly-king-p (board curr-check pos)
   (alet (board/square board (car pos) (cdr pos))
     (and (eq (check/color it) (check/color curr-check))
-         (if (member curr-check '(:white-king :black-king)) t nil))))
+         (if (member it '(:white-king :black-king)) t nil))))
 (defun square-empty-p (board curr-check pos)
   (eql (board/square board (car pos) (cdr pos)) :empty))
 (defun distance (src-pos tgt-pos)
