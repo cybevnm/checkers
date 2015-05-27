@@ -617,18 +617,6 @@
             :white)
     (setf *tgt-square-x* *src-square-x*
           *tgt-square-y* *src-square-y*)))
-(defun window/find-first-valid-move (board)
-  
- (doplist (_ move *moves*)
-    (let ((src (cons *src-square-x* *src-square-y*))
-          (tgt (cons *tgt-square-x* *tgt-square-y*)))
-      (when (board/action-valid-p move
-                                  board
-                                  (board/check board *src-square-x*
-                                               *src-square-y*)
-                                  :src src
-                                  :tgt tgt
-                                  :recursive-action *player-recursive-action*)))))
 (defun window/find-first-valid-move (board src tgt)
   (find-if (lambda (move)
              (and (eq (type-of move) 'move)
