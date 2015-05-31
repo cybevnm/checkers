@@ -186,14 +186,14 @@
                              result))))
     result))
 (defun board/actions-for-color (board color &key src tgt recursive-action)
-  (->> (check/checks-for-color color)
-    (mapcar (lambda (check)
-              (board/actions board
-                             check
-                             :src src
-                             :tgt tgt
-                             :recursive-action recursive-action)))
-    (reduce #'append)))
+  ;; TODO: fix
+  (board/actions board
+                 (ecase color
+                   (:white :white-check)
+                   (:black :black-check))
+                 :src src
+                 :tgt tgt
+                 :recursive-action recursive-action))
 (defun $board/action-valid-p (actions move &key src tgt)
   (member (make-instance 'action :move move :src src :tgt tgt)
           actions
