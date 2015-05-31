@@ -500,13 +500,13 @@
                    children
                    :initial-value most-negative-fixnum)))
         (node/rate parent))))
-(defun ai/max-rate-subtree (a b)
-  (if (> (ai/rate-subtree a) (ai/rate-subtree b))
-      a
-      b))
 (defun ai/find-best-node (parent)
   (alet (node/children parent)
-    (reduce #'ai/max-rate-subtree it)))
+    (reduce (lambda (a b)
+              (if (< (ai/rate-subtree a) (ai/rate-subtree b))
+                  a
+                  b))
+            it)))
 (defun ai/process (board)
   (let ((curr-recursive-action))
     (loop
