@@ -23,6 +23,9 @@
 (defun cons-eql-p (a b)
   (and (eql (car a) (car b))
        (eql (cdr a) (cdr b))))
+(defun stride (seq step &key (start-from 0))
+  (loop for i from start-from below (length seq) by step
+     collecting (nth i seq)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; check ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -61,6 +64,17 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defclass board ()
   ((squares :initarg :squares :reader board/squares)))
+(defun board/equalp (a b)
+  (labels ((squares-equal (a b)
+             (dotimes (y (board/height a))
+               (dotimes (x (board/width a))
+                 (unless (eq (board/square a x y)
+                             (board/square b x y))
+                   (return-from squares-equal nil))))
+             t))
+    (and (= (board/width a) (board/width b))
+         (= (board/height a) (board/height b))
+         (squares-equal a b))))
 (defun board/square (board x y)
   (aref (board/squares board) x y))
 (defun board/check (board x y)
@@ -540,6 +554,22 @@
                                                             :move move
                                                             :src (node/tgt node)))))
        while curr-recursive-action)))
+(defun test/make-boards (&rest chunks)
+  (assert (evenp (length chunks)))
+  (cons (board/make (stride chunks 2 :start-from 0))
+        (board/make (stride chunks 2 :start-from 1))))
+(defun test/check-ai-reactions (&rest chunks)
+  (let ((boards (apply #'test/make-boards chunks)))
+    (ai/process (car boards))
+    (board/equalp (car boards) (cdr boards))))
+(define-test ai/process-test ()
+  ;; black king moves to attack position
+  (assert-true (test/check-ai-reactions "..B.."  "....."
+                                        "....."  "...B."
+                                        "b...."  "b...."
+                                        ".w..."  ".w..."
+                                        "..b.."  "..b.."))
+  )
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; window ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
