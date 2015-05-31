@@ -4,7 +4,8 @@
                :anaphora
                :alexandria
                :optima
-               :arrow-macros               
+               :arrow-macros
+               :lisp-unit2
                )
   :components ((:file "checkers")))
                 

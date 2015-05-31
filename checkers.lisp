@@ -6,7 +6,8 @@
         :anaphora
         :alexandria
         :optima
-        :arrow-macros))
+        :arrow-macros
+        :lisp-unit2))
 (in-package checkers)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -438,6 +439,12 @@
                     ((:black-king :white-king) 5))))
         (incf rate (* k cost))))
     rate))
+(define-test ai/rate-board-test ()
+  (let ((board (board/make '("   b"
+                             "w b "
+                             " B  "))))
+    (assert-eql (ai/rate-board board :white) -6)
+    (assert-eql (ai/rate-board board :black) 6)))
 (defun ai/enum-moves (parent &key recursive-action)
   (let* ((nodes)
          (board (node/board parent))
