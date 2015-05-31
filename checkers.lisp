@@ -165,11 +165,11 @@
                    (moves-actions (cons src-x src-y) 
                                   (cons tgt-x tgt-y))))))
       (actions)
+      (when (member-if #'move/mandatoryp result :key #'action/move)
+        (setf result (remove-if-not #'move/mandatoryp result :key #'action/move)))
       (when src
         (setf result 
               (remove-if-not (curry #'cons-eql-p src) result :key #'action/src)))
-      (when (member-if #'move/mandatoryp result :key #'action/move)
-        (setf result (remove-if-not #'move/mandatoryp result :key #'action/move)))
       (when tgt
         (setf result 
               (remove-if-not (curry #'cons-eql-p tgt) result :key #'action/tgt)))
