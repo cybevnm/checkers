@@ -221,7 +221,8 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun square-contains-friendly-check-p (board curr-check pos)
   (alet (board/square board (car pos) (cdr pos))
-    (and (eq (check/color it) (check/color curr-check)))))
+    (and (eq (check/color it) (check/color curr-check))
+         (if (member it '(:white-check :black-check))  t nil))))
 (defun square-contains-friendly-king-p (board curr-check pos)
   (alet (board/square board (car pos) (cdr pos))
     (and (eq (check/color it) (check/color curr-check))
