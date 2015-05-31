@@ -87,7 +87,7 @@
   ($board/dimension board 1))
 (defmacro doboard ((x y square board) &body body)
   `(dotimes (,y (board/height ,board))
-     (symbol-macrolet ((,square (board/square ,board x y)))
+     (symbol-macrolet ((,square (board/square ,board ,x ,y)))
        (dotimes (,x (board/width ,board))
          ,@body))))
 (defun board/make-empty (&optional (w 10) (h 10))
