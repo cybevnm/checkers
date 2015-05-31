@@ -428,10 +428,15 @@
   (action/tgt (node/action n)))
 (defun node/move (n)
   (action/move (node/action n)))
-(defun ai/rate-board (board curr-color)
+(defun ai/rate-board (board maximizing-color)
   (let ((rate 0))
     (doboard (x y square board)
-      (incf rate (if (eql (check/color square) curr-color) 1 -1)))
+      (let ((k (if (eql (check/color square) maximizing-color) 1 -1))
+            (cost (ecase square
+                    (:empty 0)
+                    ((:black-check :white-check) 1)
+                    ((:black-king :white-king) 5))))
+        (incf rate (* k cost))))
     rate))
 (defun ai/enum-moves (parent &key recursive-action)
   (let* ((nodes)
@@ -453,7 +458,7 @@
                              :board it 
                              :color color
                              :depth depth
-                             :rate (ai/rate-board it :black-check)
+                             :rate (ai/rate-board it :white)
                              :action (make-instance 'action
                                                     :src (action/src a)
                                                     :tgt (action/tgt a)
@@ -472,7 +477,7 @@
   (alet (make-instance 'node 
                         :color :white
                         :board board
-                        :rate (ai/rate-board board :black))
+                        :rate (ai/rate-board board :white))
     (ai/build-subtree it :recursive-action recursive-action)
     it))
 (defun ai/rate-subtree (parent)
