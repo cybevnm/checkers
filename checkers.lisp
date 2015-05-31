@@ -491,11 +491,11 @@
   (let* ((children (node/children parent)))
     (if children
         (ecase (node/color parent)
-          (:black 
+          (:white
            (reduce (lambda (a b) (min a (ai/rate-subtree b)))
                    children
                    :initial-value most-positive-fixnum))
-          (:white 
+          (:black
            (reduce (lambda (a b) (max a (ai/rate-subtree b)))
                    children
                    :initial-value most-negative-fixnum)))
