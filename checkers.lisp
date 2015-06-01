@@ -125,7 +125,7 @@
 (defun board/print (board)
   (dotimes (inv-y (board/height board))
     (dotimes (x (board/width board))
-      (let ((y (- (board/width board) inv-y 1)))
+      (let ((y (- (board/height board) inv-y 1)))
         (write-char (board/square-to-char (board/square board x y)))))
     (terpri)))
 (defun board/make (src)
