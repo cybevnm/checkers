@@ -6,6 +6,7 @@
                :optima
                :arrow-macros
                :lisp-unit2
+               :cl-dot ;; to draw ai trees
                )
   :components ((:file "checkers")))
                 

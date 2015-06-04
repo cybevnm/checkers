@@ -599,6 +599,26 @@
                                         ".......w." "........."
                                         "........." "........b"
                                         "........." ".........")))
+(defmethod cl-dot:graph-object-node ((graph (eql 'example)) (obj node))
+  (make-instance 'cl-dot:node
+                 :attributes `(:style :filled
+                               :color ,(ecase (node/color obj)
+                                              (:black :black)
+                                              (:white :gray))
+                               :shape :circle)))
+(defmethod cl-dot:graph-object-points-to ((graph (eql 'example)) (obj node))
+  (assert obj)
+  (node/children obj)
+  ;; (list (car object)
+  ;;       (make-instance 'cl-dot:attributed
+  ;;                      :object (cdr object)
+  ;;                      :attributes '(:weight 3)))
+  )
+(defun ai/render-tree (board filename)
+  (cl-dot:dot-graph (cl-dot:generate-graph-from-roots 'example
+                                                      (list (ai/build-tree board)))
+                    filename
+                    :format :png))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; window ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
