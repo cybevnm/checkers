@@ -532,6 +532,26 @@
                            :recursive (when recursive-action t))))
     (ai/build-subtree node)
     node))
+(define-test ai/build-tree-test ()
+  (let* ((b (board/make '("....."
+                          "...w."
+                          "....."
+                          ".w..."
+                          "b....")))
+         (tree (ai/build-tree b))
+         (a tree)
+         (b (first (node/children a)))
+         (c (first (node/children b))))
+    ;; tree is 1 node width all way long
+    (assert-eql (length (node/children a)) 1)
+    (assert-eql (length (node/children b)) 1)
+    ;; c is the deepest node
+    (assert-eql (length (node/children c)) 0)
+    (assert-eql (node/color a) :white)
+    ;; we have two consecutive black nodes for recursive
+    ;; move
+    (assert-eql (node/color b) :black)
+    (assert-eql (node/color c) :black)))
 (defun ai/rate-subtree (parent)
   (let* ((children (node/children parent)))
     (if children
