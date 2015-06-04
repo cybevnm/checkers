@@ -36,10 +36,10 @@
     (:white *white-checks*)
     (:black *black-checks*)))
 (defun check/color (check)
-  (cond
-    ((member check *white-checks*) :white)
-    ((member check *black-checks*) :black)
-    (t nil)))
+  (case check
+    ((:white-check :white-king) :white)
+    ((:black-check :black-king) :black)
+    (otherwise nil)))
 (defun opposite-color (color)
   (ecase color
     (:white :black)
@@ -56,9 +56,9 @@
     (:white-check :white-king)
     (:black-check :black-king)))
 (defun check/kingp (check)
-  (ecase check
-    ((:white-check :black-check) nil)
-    ((:white-king :black-king) t)))
+  (case check
+    ((:white-king :black-king) t)
+    (otherwise nil)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; board ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -251,11 +251,11 @@
 (defun square-contains-friendly-check-p (board curr-check pos)
   (alet (board/square board (car pos) (cdr pos))
     (and (eq (check/color it) (check/color curr-check))
-         (if (member it '(:white-check :black-check))  t nil))))
+         (not (check/kingp it)))))
 (defun square-contains-friendly-king-p (board curr-check pos)
   (alet (board/square board (car pos) (cdr pos))
     (and (eq (check/color it) (check/color curr-check))
-         (if (member it '(:white-king :black-king)) t nil))))
+         (check/kingp it))))
 (defun square-empty-p (board curr-check pos)
   (eql (board/square board (car pos) (cdr pos)) :empty))
 (defun distance (src-pos tgt-pos)
@@ -506,7 +506,10 @@
                              :board modified-board
                              :color color
                              :depth depth
-                             :rate (ai/rate-board modified-board :white)
+                             ;; we need rate only at deepest level
+                             :rate (if (= depth *max-depth*)
+                                       (ai/rate-board modified-board :white)
+                                       0)
                              :action (make-instance 'action
                                                     :src src
                                                     :tgt tgt
