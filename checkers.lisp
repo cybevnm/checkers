@@ -450,7 +450,8 @@
    (children :initarg :children :initform nil :accessor node/children)
    (depth :initarg :depth :initform 0 :reader node/depth)
    (rate :initarg :rate :reader node/rate)
-   (action :initarg :action :reader node/action)))
+   (action :initarg :action :reader node/action)
+   (recursive :initarg :recursive :initform nil :reader node/recursivep)))
 (defun node/src (n)
   (action/src (node/action n)))
 (defun node/tgt (n)
@@ -473,57 +474,73 @@
                              " B  "))))
     (assert-eql (ai/rate-board board :white) -6)
     (assert-eql (ai/rate-board board :black) 6)))
-(defun ai/enum-moves (parent &key recursive-action)
+(defun ai/enum-moves (parent)
   (let* ((nodes)
          (board (node/board parent))
-         (color (opposite-color (node/color parent)))
+         (parent-color (node/color parent))
+         (color (if (node/recursivep parent)
+                    parent-color
+                    (opposite-color parent-color)))
          (depth (1+ (node/depth parent)))
-         (actions (board/actions-for-color board
-                                           color
-                                           :recursive-action recursive-action)))
+         (actions (board/actions-for-color
+                   board
+                   color
+                   :recursive-action (when (node/recursivep parent)
+                                       (let ((action (node/action parent)))
+                                         (make-instance 'action
+                                                        :move (action/move action)
+                                                        :src (action/tgt action)))))))
     (dolist (a actions)
-      (alet (board/clone board)
-        (move/apply (action/move a)
-                    it
-                    (board/check it (car (action/src a)) (cdr (action/src a)))
-                    (action/src a)
-                    (action/tgt a))
+      (let* ((modified-board (board/clone board))
+             (src (action/src a))
+             (tgt (action/tgt a))
+             (recursive (move/apply (action/move a)
+                                    modified-board
+                                    (board/check modified-board
+                                                 (car src)
+                                                 (cdr src))
+                                    src 
+                                    tgt)))
         (push (make-instance 'node
                              :parent parent
-                             :board it 
+                             :board modified-board
                              :color color
                              :depth depth
-                             :rate (ai/rate-board it :white)
+                             :rate (ai/rate-board modified-board :white)
                              :action (make-instance 'action
-                                                    :src (action/src a)
-                                                    :tgt (action/tgt a)
-                                                    :move (action/move a)))
+                                                    :src src
+                                                    :tgt tgt
+                                                    :move (action/move a))
+                             :recursive recursive)
               nodes)))
     nodes))
 (defparameter *max-depth* 4)
-(defun ai/build-subtree (parent &key recursive-action)
+(defun ai/build-subtree (parent)
   (unless (eql (node/depth parent) *max-depth*)
-    (let ((nodes (ai/enum-moves parent :recursive-action recursive-action)))
+    (let ((nodes (ai/enum-moves parent)))
       (setf (node/children parent) nodes) 
       (dolist (n nodes)
-        (ai/build-subtree n :recursive-action recursive-action)))))
+        (ai/build-subtree n)))))
 
 (defun ai/build-tree (board &key recursive-action)
-  (alet (make-instance 'node 
-                        :color :white
-                        :board board
-                        :rate (ai/rate-board board :white))
-    (ai/build-subtree it :recursive-action recursive-action)
-    it))
+  (let* ((color (if recursive-action :black :white))
+         (node (make-instance 'node 
+                           :color color
+                           :board board
+                           :rate (ai/rate-board board color)
+                           :action recursive-action
+                           :recursive (when recursive-action t))))
+    (ai/build-subtree node)
+    node))
 (defun ai/rate-subtree (parent)
   (let* ((children (node/children parent)))
     (if children
-        (ecase (node/color parent)
-          (:white
+        (ecase (node/color (first children))
+          (:black
            (reduce (lambda (a b) (min a (ai/rate-subtree b)))
                    children
                    :initial-value most-positive-fixnum))
-          (:black
+          (:white
            (reduce (lambda (a b) (max a (ai/rate-subtree b)))
                    children
                    :initial-value most-negative-fixnum)))
