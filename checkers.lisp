@@ -7,7 +7,8 @@
         :alexandria
         :optima
         :arrow-macros
-        :lisp-unit2))
+        :lisp-unit2)
+  (:shadowing-import-from :alexandria :set-equal))
 (in-package checkers)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
