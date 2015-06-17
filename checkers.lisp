@@ -27,6 +27,9 @@
 (defun stride (seq step &key (start-from 0))
   (loop for i from start-from below (length seq) by step
      collecting (nth i seq)))
+(defun square-func (x period)
+  "Returns -1, 0 or 1 depending on x"
+  (signum (- (mod (- x (/ period 2)) period) (/ period 2))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; check ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -728,10 +731,60 @@
                     filename
                     :format :png))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;; window ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; assets loading and related stuff ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defparameter *window-width* 400)
-(defparameter *window-height* 400)
+(defun executable-file-path ()
+  #+linux (osicat:read-link #p"/proc/self/exe")
+  #-linux (error (concat "executable-file-path is "
+                         "not supported for this platform yet")))
+(defparameter *sources-dir-path*
+  (make-pathname :name nil :type nil
+                 :defaults #.(or *compile-file-truename*
+                                 *load-truename*)))
+(defparameter *assets-dir-type* :development-dir
+  "Specifies where to search for assets, can take two values:
+   :development-dir - is directory where .lisp sources files are,
+   :executable-dir - is directory where dumped image is.")
+(defun assets-dir-path ()
+  (ecase *assets-dir-type*
+    (:development-dir *sources-dir-path*)
+    (:executable-dir (make-pathname :name nil :type nil
+                                    :defaults (executable-file-path)))))
+(defun string-width (str font)
+  (* (length str) (sdl:char-width font)))
+(defun make-font (file-name char-width char-height)
+  (let ((chars-num 48))
+    (sdl:initialise-font
+     (make-instance 'sdl:simple-font-definition
+                    :width char-width :height char-height
+                    :character-map "ABCDEFGHIJKLMNOPQRSTUVWXYZ:'!?_-,.()#~0123456789"
+                    :character-mask (loop for y from 0 below 1
+                                       append (loop for x from 0 below chars-num
+                                                 collect (list (* x char-width)
+                                                               (* y char-height)
+                                                               char-width
+                                                               char-height)))
+                    :color-key (sdl:color :r 99 :g 0 :b 0)
+                    :filename (sdl:create-path file-name
+                                               (assets-dir-path))))))
+(defun make-biggest-font ()
+  (make-font "biggest-font.bmp" 32 40))
+(defun make-big-font ()
+  (make-font "big-font.bmp" 24 30))
+(defun make-medium-font ()
+  (make-font "medium-font.bmp" 16 20))
+(defparameter *biggest-font* nil)
+(defparameter *big-font* nil)
+(defparameter *medium-font* nil)
+(defun initialise-fonts ()
+  (setf *biggest-font* (make-biggest-font)
+        *big-font*     (make-big-font)
+        *medium-font*  (make-medium-font)))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; game ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defparameter *window-width* 450)
+(defparameter *window-height* 450)
 (defparameter *square-color* (list :white (sdl:color :r #xE8 :g #xD0 :b #xAA)
                                    :black (sdl:color :r #xA6 :g #x7D :b #x5D)))
 (defparameter *check-color* (list :white-check (sdl:color :r #xF6 :g #xC6 :b #x48)
@@ -742,81 +795,59 @@
                                       :white-king (sdl:color :r #xD0 :g #x00 :b #x00)
                                       :black-check (sdl:color :r #x8A :g #x60 :b #x54)
                                       :black-king (sdl:color :r #xD0 :g #x00 :b #x00)))
+(defparameter *state* :board
+  "State can be one of two values:
+   :intro - intro screen
+   :board - board screen")
+(defgeneric game/handle-input (state key))
+(defgeneric game/draw (state frame-index))
+(defmethod game/handle-input ((state (eql :intro)) key)
+  (case key
+    (:sdl-key-space (setf *state* :board))
+    (:sdl-key-q (sdl:push-quit-event))))
+(defparameter *orange* (sdl:color :r 255 :g 127 :b 0))
+(defparameter *purple* (sdl:color :r 128 :g 0   :b 128))
+(defmethod game/draw ((state (eql :intro)) frame-index)
+  (labels ((calc-string-left-border (str font)
+             (/ (- *window-height* (string-width str font)) 2)))
+    ;; title
+    (let* ((title "CHECKERS")
+           (title-left (calc-string-left-border title *biggest-font*)))
+      (loop          for char across title
+         for index from 0
+         do (sdl:draw-string-solid-*
+             (string char)
+             (+ (* index (sdl:char-width *biggest-font*))
+                title-left)
+             (if (evenp index) 30 45)
+             :font *biggest-font*
+             :color (getf *square-color* (if (evenp index) :white :black)))))
+    ;; press space
+    (when (> (square-func frame-index 30) 0)
+      (let* ((text "PRESS SPACE")
+             (left (calc-string-left-border text *medium-font*)))
+        (sdl:draw-string-solid-* text
+                                 left
+                                 (/ *window-height* 2)
+                                 :font *medium-font*
+                                 :color *orange*)))
+    ;; author
+    (let* ((text "BY CYBEVNM")
+           (left (calc-string-left-border text *medium-font*)))
+      (sdl:draw-string-solid-* text 
+                               left
+                               (- *window-height* 40)
+                               :font *medium-font*
+                               :color *purple*))))
 (defparameter *src-square-x* 3)
 (defparameter *src-square-y* 3)
 (defparameter *tgt-square-x* nil)
 (defparameter *tgt-square-y* nil)
 (defparameter *player-recursive-action* nil)
 (defparameter *board* (board/make-1))
-(defun window/tgt-square-defined-p ()
+(defun game/tgt-square-defined-p ()
   (and *tgt-square-x* *tgt-square-y*))
-(defun window/calc-square-width (board)
-  (round (/ *window-width* (board/width board))))
-(defun window/calc-square-height (board)
-  (round (/ *window-height* (board/height board))))
-(defun window/draw-check (x y w h square)
-  (sdl:draw-filled-circle-* (+ (* x w) (round (/ w 2)))
-                            (+ (* y h) (round (/ h 2)))
-                            (round (/ (/ (+ w h) 2) 3))
-                            :color (getf *check-color* square))
-  (sdl:draw-filled-circle-* (+ (* x w) (round (/ w 2))) 
-                            (+ (* y h) (round (/ h 2)))
-                            (round (/ (/ (+ w h) 2) 6))
-                            :color (getf *check-pin-color* square)))
-(defun window/calc-inv-y (board y)
-  (- (board/height board) y 1))
-(defun window/draw-selected-square (board x y square-w square-h color)
-  (sdl:draw-filled-circle-* (+ (* x square-w) (round (/ square-w 2))) 
-                            (+ (* (window/calc-inv-y board y) square-h) 
-                               (round (/ square-h 2)))
-                            (round (/ (/ (+ square-w square-h) 2) 5))
-                            :color color))
-(defun window/draw-src-square (board square-w square-h)
-  (window/draw-selected-square board 
-                               *src-square-x* *src-square-y* 
-                               square-w square-h 
-                               sdl:*blue*))
-(defun window/draw-tgt-square (board square-w square-h)
-  (when (and *tgt-square-x* *tgt-square-y*)
-    (window/draw-selected-square board
-                                 *tgt-square-x* *tgt-square-y*
-                                 square-w square-h
-                                 sdl:*red*)))
-(defun window/draw-move-variants (board square-w square-h)
-  (let ((src-square (board/square board *src-square-x* *src-square-y*)))
-    (when (and (not (eq src-square :empty))
-               (eq (check/color src-square) :white))
-      (dolist (a (board/actions board 
-                                src-square
-                                :src (cons *src-square-x* *src-square-y*)
-                                :recursive-action *player-recursive-action*))
-        (sdl:draw-box-* (* (car (action/tgt a)) square-w)
-                        (* (window/calc-inv-y board (cdr (action/tgt a))) square-h)
-                        square-w 
-                        square-h
-                        :color (sdl:color :r 60 :g 60 :b 60)
-                        :alpha 125)))))
-(defun window/draw-background (board square-w square-h)
-  (doboard (x y square board)
-      (let* ((inv-y (window/calc-inv-y board y))
-             (window-x (* x square-w))
-             (window-y (* inv-y square-h)))
-        (sdl:draw-box-* window-x  window-y square-w square-h
-                        :color (getf *square-color* (board/color x y))))))
-(defun window/draw-checks (board square-w square-h)
-  (doboard (x y square board)
-    (alet (window/calc-inv-y board y)
-      (when (not (eql square :empty))
-        (window/draw-check x it square-w square-h square)))))
-(defun window/draw-game (board)
-  (let ((square-w  (window/calc-square-width board))
-        (square-h (window/calc-square-height board)))
-    (window/draw-background board square-w square-h)
-    (window/draw-move-variants board square-w square-h)
-    (window/draw-checks board square-w square-h)
-    (window/draw-src-square board square-w square-h)
-    (window/draw-tgt-square board square-w square-h)))
-(defun window/move-selection (board dx dy)
+(defun game/move-selection (board dx dy)
   (if (and *tgt-square-x* *tgt-square-y*)
       (setf *tgt-square-x* 
             (clamp (+ *tgt-square-x* dx) 0 (1- (board/width board)))
@@ -826,12 +857,12 @@
             (clamp (+ *src-square-x* dx) 0 (1- (board/width board)))
             *src-square-y*
             (clamp (+ *src-square-y* dy) 0 (1- (board/height board))))))
-(defun window/init-move (board)
+(defun game/init-move (board)
   (when (eq (check/color (board/square board *src-square-x* *src-square-y*))
             :white)
     (setf *tgt-square-x* *src-square-x*
           *tgt-square-y* *src-square-y*)))
-(defun window/find-first-valid-move (board src tgt)
+(defun game/find-first-valid-move (board src tgt)
   (find-if (lambda (move)
              (and (eq (type-of move) 'move)
                   (board/action-valid-p move
@@ -843,10 +874,10 @@
                                         :tgt tgt
                                         :recursive-action *player-recursive-action*)))
            *moves*))
-(defun window/apply-move-if-possible (board)
+(defun game/apply-move-if-possible (board)
   (let* ((src (cons *src-square-x* *src-square-y*))
          (tgt (cons *tgt-square-x* *tgt-square-y*))
-         (move (window/find-first-valid-move board src tgt)))
+         (move (game/find-first-valid-move board src tgt)))
     (when move
       (setf *src-square-x* *tgt-square-x*
             *src-square-y* *tgt-square-y*)
@@ -857,47 +888,186 @@
                                                             :src tgt)))
         (unless recursive-move
           (ai/process *board*)))))
-  (window/finalize-move))
-(defun window/init-or-apply-move (board)
-  (if (window/tgt-square-defined-p)
-      (window/apply-move-if-possible board)
-      (window/init-move board)))
-(defun window/cancel-move ()
-  (window/finalize-move))
-(defun window/finalize-move ()
+  (game/finalize-move))
+(defun game/init-or-apply-move (board)
+  (if (game/tgt-square-defined-p)
+      (game/apply-move-if-possible board)
+      (game/init-move board)))
+(defun game/cancel-move ()
+  (game/finalize-move))
+(defun game/finalize-move ()
   (setf *tgt-square-x* nil
         *tgt-square-y* nil))
-(defun window/handle-input (board key)
+(defmethod game/handle-input ((state (eql :board)) key)
   (case key
-    (:sdl-key-left (window/move-selection board -1 0))
-    (:sdl-key-up (window/move-selection board 0 1))
-    (:sdl-key-right (window/move-selection board 1 0))
-    (:sdl-key-down (window/move-selection board 0 -1))
-    (:sdl-key-space (window/init-or-apply-move board))
-    (:sdl-key-escape (window/cancel-move))
+    (:sdl-key-left (game/move-selection *board* -1 0))
+    (:sdl-key-up (game/move-selection *board* 0 1))
+    (:sdl-key-right (game/move-selection *board* 1 0))
+    (:sdl-key-down (game/move-selection *board* 0 -1))
+    (:sdl-key-space (game/init-or-apply-move *board*))
+    (:sdl-key-escape (game/cancel-move))
     (:sdl-key-q (sdl:push-quit-event))))
+(defun game/calc-inv-y (board y)
+  (- (board/height board) y 1))
+(defun game/draw-selected-square (board labels-w labels-h
+                                  x y square-w square-h color)
+  (sdl:draw-filled-circle-* (+ labels-w (* x square-w) (round (/ square-w 2))) 
+                            (+ (* (game/calc-inv-y board y) square-h) 
+                               (round (/ square-h 2))
+                               labels-h)
+                            (round (/ (/ (+ square-w square-h) 2) 5))
+                            :color color))
+(defun game/draw-src-square (board labels-w labels-h square-w square-h)
+  (declare (ignore labels-h))
+  (game/draw-selected-square board
+                             labels-w labels-h
+                             *src-square-x* *src-square-y* 
+                             square-w square-h 
+                             sdl:*blue*))
+(defun game/draw-tgt-square (board labels-w labels-h square-w square-h)
+  (declare (ignore labels-h))
+  (when (and *tgt-square-x* *tgt-square-y*)
+    (game/draw-selected-square board
+                               labels-w labels-h
+                               *tgt-square-x* *tgt-square-y*
+                               square-w square-h
+                               sdl:*red*)))
+(defun game/draw-move-variants (board labels-w labels-h square-w square-h)
+  (let ((src-square (board/square board *src-square-x* *src-square-y*)))
+    (when (and (not (eq src-square :empty))
+               (eq (check/color src-square) :white))
+      (dolist (a (board/actions board 
+                                src-square
+                                :src (cons *src-square-x* *src-square-y*)
+                                :recursive-action *player-recursive-action*))
+        (sdl:draw-box-* (+ (* (car (action/tgt a)) square-w) labels-w)
+                        (+ labels-h
+                           (* (game/calc-inv-y board (cdr (action/tgt a)))
+                              square-h))
+                        square-w 
+                        square-h
+                        :color (sdl:color :r 60 :g 60 :b 60)
+                        :alpha 125)))))
+(defun game/draw-ver-labels (board x0 labels-w labels-h square-w square-h
+                             &key line)
+  (declare (ignore square-w))
+  (dotimes (y (board/height board))
+    (let ((y0 (+ (* y square-h) labels-h))
+          (text (write-to-string (- (board/width board) y))))
+      (sdl:draw-string-solid-* text
+                               (round (+ x0
+                                         (/ (- labels-w
+                                               (string-width text *medium-font*))
+                                            2)))
+                               (round (+ y0
+                                         (/ (- square-h
+                                               (sdl:char-height *medium-font*))
+                                            2)))
+                               :font *medium-font*
+                               :color sdl:*black*)
+      (ecase line
+        (:left (sdl:draw-line-* x0 y0
+                                x0 (+ y0 square-h)
+                                :color sdl:*black*))
+        (:right (sdl:draw-line-* (+ x0 labels-w -1) y0
+                                 (+ x0 labels-w -1) (+ y0 square-h)
+                                 :color sdl:*black*))))))
+(defun game/draw-hor-labels (board y0 labels-w labels-h square-w square-h
+                             &key line)
+  (declare (ignore square-h))
+  (dotimes (x (board/width board))
+    (let ((x0 (+ (* x square-w) labels-w)))
+      (sdl:draw-string-solid-* (string (code-char (+ (char-code #\A) x)))
+                               (round (+ x0
+                                         (/ (- square-w
+                                               (sdl:char-width *medium-font*))
+                                            2)))
+                               (round (+ y0
+                                         (/ (- labels-h
+                                               (sdl:char-height *medium-font*))
+                                             2)))
+                               :font *medium-font*
+                               :color sdl:*black*)
+      (ecase line
+        (:top (sdl:draw-line-* x0 y0
+                               (+ x0 square-w) y0
+                               :color sdl:*black*))
+        (:bottom (sdl:draw-line-* x0 (+ y0 labels-h -1)
+                                  (+ x0 square-w) (+ y0 labels-h -1)
+                                  :color sdl:*black*))))))
+(defun game/draw-board (board labels-w labels-h square-w square-h)
+  (game/draw-ver-labels board 0
+                        labels-w labels-h square-w square-h
+                        :line :right)
+  (game/draw-ver-labels board (- *window-width* labels-w)
+                        labels-w labels-h square-w square-h
+                        :line :left)
+  (game/draw-hor-labels board 0
+                        labels-w labels-h square-w square-h
+                        :line :bottom)
+  (game/draw-hor-labels board (- *window-height* labels-h)
+                        labels-w labels-h square-w square-h
+                        :line :top)
+  ;; squares
+  (doboard (x y square board)
+    (let* ((inv-y (game/calc-inv-y board y))
+           (window-x (+ (* x square-w) labels-w))
+           (window-y (+ labels-h (* inv-y square-h))))
+      (sdl:draw-box-* window-x  window-y square-w square-h
+                      :color (getf *square-color* (board/color x y))))))
+(defun game/draw-check (labels-w labels-h x y w h square)
+  (sdl:draw-filled-circle-* (+ labels-w (* x w) (round (/ w 2)))
+                            (+ labels-h (* y h) (round (/ h 2)))
+                            (round (/ (/ (+ w h) 2) 3))
+                            :color (getf *check-color* square))
+  (sdl:draw-filled-circle-* (+ labels-w (* x w) (round (/ w 2)))
+                            (+ labels-h (* y h) (round (/ h 2)))
+                            (round (/ (/ (+ w h) 2) 6))
+                            :color (getf *check-pin-color* square)))
+(defun game/draw-checks (board labels-w labels-h square-w square-h)
+  (doboard (x y square board)
+    (alet (game/calc-inv-y board y)
+      (when (not (eql square :empty))
+        (game/draw-check labels-w labels-h x it square-w square-h square)))))
+(defmethod game/draw ((state (eql :board)) frame-index)
+  (let* ((labels-w (round (* 2.2 (sdl:char-width *medium-font*))))
+         (labels-h (round (* 2.2 (sdl:char-width *medium-font*))))
+         (square-w (round (/ (- *window-width* (* 2 labels-w))
+                             (board/width *board*))))
+         (square-h (round (/ (- *window-height* (* 2  labels-h))
+                             (board/height *board*)))))
+    (game/draw-board *board* labels-w labels-h square-w square-h)
+    (game/draw-move-variants *board* labels-w labels-h square-w square-h)
+    (game/draw-checks *board* labels-w labels-h square-w square-h)
+    (game/draw-src-square *board* labels-w labels-h square-w square-h)
+    (game/draw-tgt-square *board* labels-w labels-h square-w square-h)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Entry point ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun main ()
   (sdl:with-init ()
-    (sdl:window *window-width* *window-height* :bpp 32)
-    (sdl:with-events (:poll)
-      (:quit-event () t)
-      (:video-expose-event () (sdl:update-display))
-      (:key-down-event (:key key) 
-        (restart-case
-            (window/handle-input *board* key)
-          (continue () :report "Continue interaction")))
-      (:idle ()
-        (restart-case
-            (sdl:with-surface 
-                (back-buffer (sdl:create-surface *window-width* 
-                                                 *window-height*
-                                                 :pixel-alpha 120))
-              (handle-slime-requests)
-              (sdl:clear-display sdl:*black*)
-              (window/draw-game *board*)
-              (sdl:blit-surface back-buffer sdl:*default-display*)
-              (sdl:update-display))
-          (continue () :report "Continue interaction"))))))
+     (let ((frame-index 0))
+      (sdl:window *window-width* *window-height*
+                  :fps (make-instance 'sdl:fps-fixed :target-frame-rate 30))
+      (sdl:initialise-default-font sdl:*font-5x7*)
+      (initialise-fonts)
+      (sdl:with-events (:poll)
+        (:quit-event () t)
+        (:video-expose-event () (sdl:update-display))
+        (:key-down-event (:key key)
+                         (restart-case
+                             (game/handle-input *state* key)
+                           (continue () :report "Continue interaction")))
+        (:idle ()
+               (restart-case
+                   (progn
+                     (incf frame-index)
+                     (handle-slime-requests)
+                     (sdl:clear-display (getf *square-color* :white))
+                     (game/draw *state* frame-index)
+                     (sdl:update-display))
+                 (continue () :report "Continue interaction")))))))
+(defun image-main ()
+  "Should be used to start application from the dumped image"
+  (let ((*assets-dir-type* :executable-dir))
+    (main)))
