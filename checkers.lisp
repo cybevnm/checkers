@@ -821,7 +821,7 @@
                 title-left)
              (if (evenp index) 30 45)
              :font *biggest-font*
-             :color (getf *square-color* (if (evenp index) :white :black)))))
+             :color (getf *square-color* :black))))
     ;; press space
     (when (> (square-func frame-index 30) 0)
       (let* ((text "PRESS SPACE")
@@ -830,7 +830,7 @@
                                  left
                                  (/ *window-height* 2)
                                  :font *medium-font*
-                                 :color *orange*)))
+                                 :color (getf *square-color* :black))))
     ;; author
     (let* ((text "BY CYBEVNM")
            (left (calc-string-left-border text *medium-font*)))
