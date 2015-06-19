@@ -231,7 +231,7 @@
                                         :src (cons src-x src-y)
                                         :tgt (cons tgt-x tgt-y))
                          as
-                         :test #'action/eql)
+                         :test #'action/equalp)
                t)))
     ;; black check moves
     (let* ((as (board/enum-actions (board/make '("....."
@@ -256,7 +256,7 @@
                               :src src
                               :tgt tgt
                               :recursive-action recursive-action)
-          :test #'action/eql))
+          :test #'action/equalp))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -455,7 +455,7 @@
   (:documentation "Binds move to source and target positions.
                    Note that both source and target are optional
                    and can be nil"))
-(defun action/eql (a b)
+(defun action/equalp (a b)
   (and (eql (action/move a) (action/move b))
        (cons-eql-p (action/src a) (action/src b))
        (cons-eql-p (action/tgt a) (action/tgt b))))
