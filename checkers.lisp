@@ -191,11 +191,11 @@
 (defun board/kings-row-p (board color y)
   "Return t if y is kings row"
   (= y (board/kings-row board color)))
-(defun board/actions (board check &key src tgt recursive-action)
+(defun board/actions (board color &key src tgt recursive-action)
   (let ((result))
     (labels ((moves-actions (src tgt)
                (doplist (_ move *moves*)
-                 (when (move/validp move board check src tgt)
+                 (when (move/validp move board color src tgt)
                    (push (make-instance 'action :move move :src src :tgt tgt)
                          result))))
              (actions ()
@@ -224,65 +224,71 @@
                                         t)))
                              result))))
     result))
-(defun board/actions-for-color (board color &key src tgt recursive-action)
-  ;; TODO: fix
-  (board/actions board
-                 (ecase color
-                   (:white :white-check)
-                   (:black :black-check))
-                 :src src
-                 :tgt tgt
-                 :recursive-action recursive-action))
-(defun $board/action-valid-p (actions move &key src tgt)
+(define-test ai/board-actions-test ()
+  (labels ((check-action (as move-name src-x src-y tgt-x tgt-y)
+             (when (find (make-instance 'action
+                                        :move (getf *moves* move-name)
+                                        :src (cons src-x src-y)
+                                        :tgt (cons tgt-x tgt-y))
+                         as
+                         :test #'action/eql)
+               t)))
+    ;; black check moves
+    (let* ((as (board/actions (board/make '("....."
+                                            "..b.."
+                                            ".....")) :black)))
+      (assert-eql (length as) 2)
+      (assert-true (check-action as 'check-move 2 1 1 0))
+      (assert-true (check-action as 'check-move 2 1 3 0)))
+    ;; white check moves
+    (let* ((as (board/actions (board/make '("....."
+                                            "..w.."
+                                            ".....")) :white)))
+      (assert-eql (length as) 2)
+      (assert-true (check-action as 'check-move 2 1 1 2))
+      (assert-true (check-action as 'check-move 2 1 3 2)))
+    ;; TODO: other tests should be added
+    ))
+(defun board/action-valid-p (move board color &key src tgt recursive-action)
   (member (make-instance 'action :move move :src src :tgt tgt)
-          actions
+          (board/actions board
+                         color
+                         :src src
+                         :tgt tgt
+                         :recursive-action recursive-action)
           :test #'action/eql))
-(defun board/action-valid-p (move board check &key src tgt recursive-action)
-  ($board/action-valid-p (board/actions board
-                                        check
-                                        :src src
-                                        :tgt tgt
-                                        :recursive-action recursive-action)
-                         move
-                         :src src
-                         :tgt tgt))
-(defun board/action-valid-for-color-p (move board color &key src tgt recursive-action)
-  ($board/action-valid-p (board/actions-for-color board
-                                                 color
-                                                 :src src
-                                                 :tgt tgt
-                                                 :recursive-action recursive-action)
-                         move
-                         :src src
-                         :tgt tgt))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun square-contains-friendly-check-p (board curr-check pos)
+(defun square-contains-friendly-check-p (board curr-color pos)
   (alet (board/square board (car pos) (cdr pos))
-    (and (eq (check/color it) (check/color curr-check))
+    (and (eq (check/color it) curr-color)
          (not (check/kingp it)))))
-(defun square-contains-friendly-king-p (board curr-check pos)
+(defun square-contains-friendly-king-p (board curr-color pos)
   (alet (board/square board (car pos) (cdr pos))
-    (and (eq (check/color it) (check/color curr-check))
+    (and (eq (check/color it) curr-color)
          (check/kingp it))))
-(defun square-empty-p (board curr-check pos)
+(defun square-empty-p (board curr-color pos)
+  (declare (ignore curr-color))
   (eql (board/square board (car pos) (cdr pos)) :empty))
 (defun distance (src-pos tgt-pos)
   (cons (- (car tgt-pos) (car src-pos))
         (- (cdr tgt-pos) (cdr src-pos))))
-(defun hor-distance (board curr-check src-pos tgt-pos)
+(defun hor-distance (board curr-color src-pos tgt-pos)
+  (declare (ignore board curr-color))
   (abs (car (distance src-pos tgt-pos))))
-(defun ver-forward-distance (board curr-check src-pos tgt-pos)
+(defun ver-forward-distance (board curr-color src-pos tgt-pos)
+  (declare (ignore curr-color))
   (alet (cdr (distance src-pos tgt-pos))
     (ecase (board/check-direction 
             (board/square board (car src-pos) (cdr src-pos)))
       (:up it)
       (:down (- it)))))
-(defun ver-distance (board curr-check src-pos tgt-pos)
+(defun ver-distance (board curr-color src-pos tgt-pos)
+  (declare (ignore board curr-color))
   (abs (cdr (distance src-pos tgt-pos))))
-(defun hor-and-ver-distances-are-the-same (board curr-check src-pos tgt-pos)
-  (declare (ignore board curr-check))
+(defun hor-and-ver-distances-are-the-same (board curr-color src-pos tgt-pos)
+  (declare (ignore board curr-color))
   (= (abs (- (car src-pos) (car tgt-pos)))
      (abs (- (cdr src-pos) (cdr tgt-pos)))))
 (defun half-distance (src-pos tgt-pos)
@@ -307,7 +313,7 @@
             ((or (= x (car tgt-pos))
                  (= y (cdr tgt-pos))))
           (funcall func x y (board/square board x y)))))))
-(defun line-contains-one-enemy-check-p (board curr-check src-pos tgt-pos)
+(defun line-contains-one-enemy-check-p (board curr-color src-pos tgt-pos)
   (let ((enemy-checks-num 0))
     (map-line-squares board
                       src-pos
@@ -315,15 +321,18 @@
                       (lambda (x y square)
                         (declare (ignore x y))
                         (when (and (eq (check/color square)
-                                       (check/opposite-color curr-check)))
+                                       (opposite-color curr-color)))
                           (incf enemy-checks-num))))
     (= enemy-checks-num 1)))
-(defun line-contains-enemy-check-before-target-p (board curr-check src-pos tgt-pos)
+(defun line-contains-enemy-check-before-target-p (board curr-color
+                                                  src-pos tgt-pos)
   (let ((dx (alet (- (car src-pos) (car tgt-pos)) (/ it (abs it))))
         (dy (alet (- (cdr src-pos) (cdr tgt-pos)) (/ it (abs it)))))
-    (eq (check/color (board/square board (+ (car tgt-pos) dx) (+ (cdr tgt-pos) dy)))
-        (check/opposite-color curr-check))))
-(defun count-checks-on-line (board curr-check src-pos tgt-pos)
+    (eq (check/color (board/square board
+                                   (+ (car tgt-pos) dx)
+                                   (+ (cdr tgt-pos) dy)))
+        (opposite-color curr-color))))
+(defun count-checks-on-line (board curr-color src-pos tgt-pos)
   "Returns cons cell where first value is number of friendly checks 
    and second value is number of enemy checks"
   (let ((friendly-checks-num 0)
@@ -333,34 +342,34 @@
                       tgt-pos
                       (lambda (x y square)
                         (declare (ignore x y))
-                        (when (and (eq (check/color square)
-                                       (check/color curr-check)))
+                        (when (and (eq (check/color square) curr-color))
                           (incf friendly-checks-num))
                         (when (and (eq (check/color square)
-                                       (check/opposite-color curr-check)))
+                                       (opposite-color curr-color)))
                           (incf enemy-checks-num))))
     (cons friendly-checks-num enemy-checks-num)))
-(defun line-contains-no-friendly-checks-p (board curr-check src-pos tgt-pos)
-  (zerop (car (count-checks-on-line board curr-check src-pos tgt-pos))))
-(defun line-contains-no-enemy-checks-p (board curr-check src-pos tgt-pos)
-  (zerop (cdr (count-checks-on-line board curr-check src-pos tgt-pos))))
-(defun move-check (board curr-check src-pos tgt-pos)
-  (board/move-check board 
-                    (car src-pos) (cdr src-pos) 
-                    (car tgt-pos) (cdr tgt-pos))
-  (when (and (not (check/kingp curr-check))
-             (board/kings-row-p board
-                                (check/opposite-color curr-check)
-                                (cdr tgt-pos)))
-    (setf (board/square board (car tgt-pos) (cdr tgt-pos))
-          (check/king-for-check curr-check))))
-(defun kill-enemy-checks-on-line (board curr-check src-pos tgt-pos)
+(defun line-contains-no-friendly-checks-p (board curr-color src-pos tgt-pos)
+  (zerop (car (count-checks-on-line board curr-color src-pos tgt-pos))))
+(defun line-contains-no-enemy-checks-p (board curr-color src-pos tgt-pos)
+  (zerop (cdr (count-checks-on-line board curr-color src-pos tgt-pos))))
+(defun move-check (board curr-color src-pos tgt-pos)
+  (alet (board/square board (car src-pos) (cdr src-pos))
+    (board/move-check board 
+                      (car src-pos) (cdr src-pos) 
+                      (car tgt-pos) (cdr tgt-pos))
+    (when (and (not (check/kingp it))
+               (board/kings-row-p board
+                                  (opposite-color curr-color)
+                                  (cdr tgt-pos)))
+      (setf (board/square board (car tgt-pos) (cdr tgt-pos))
+            (check/king-for-color curr-color)))))
+(defun kill-enemy-checks-on-line (board curr-color src-pos tgt-pos)
   (map-line-squares board
                     src-pos
                     tgt-pos
                     (lambda (x y square)
                       (when (and (eq (check/color square)
-                                     (check/opposite-color curr-check)))
+                                     (opposite-color curr-color)))
                         (board/kill-check board x y)))))
 (defclass move ()
   ((recursive :initarg :recursive :reader move/recursivep)
@@ -368,15 +377,15 @@
    (predicate :initarg :predicate :reader move/predicate)
    (modifier :initarg :modifier :reader move/modifier)))
 (defparameter *moves* nil)
-(defun move/validp (move board curr-check src-pos tgt-pos)
-  (funcall (move/predicate move) board curr-check src-pos tgt-pos))
-(defun move/apply (move board curr-check src-pos tgt-pos)
+(defun move/validp (move board curr-color src-pos tgt-pos)
+  (funcall (move/predicate move) board curr-color src-pos tgt-pos))
+(defun move/apply (move board curr-color src-pos tgt-pos)
   "Returns t if move is recursive and should be continued"
   (flet ((valid-for-any-pos-p (src-pos2)
            (doboard (x y _ board)
-             (when (move/validp move board curr-check src-pos2 (cons x y))
+             (when (move/validp move board curr-color src-pos2 (cons x y))
                (return-from valid-for-any-pos-p t)))))
-    (funcall (move/modifier move) board curr-check src-pos tgt-pos)
+    (funcall (move/modifier move) board curr-color src-pos tgt-pos)
     (and (move/recursivep move) (valid-for-any-pos-p tgt-pos))))
 (defun move/remove (name)
   (remf *moves* name))
@@ -386,24 +395,24 @@
   (defun move/gen-pred-func-call (def)
     (multiple-value-bind (name args-rest result) (move/parse-pred-func-def def)
       `(eql ,(append (list name) 
-                     '(board curr-check) 
+                     '(board curr-color) 
                      args-rest)
             ,result)))
   (defun move/parse-mod-func-def (def)
     (values (first def) (cdr def)))
   (defun move/gen-mod-func-call (def)
     (multiple-value-bind (name args-rest) (move/parse-mod-func-def def)
-      (append (list name) '(board curr-check) args-rest))))
+      (append (list name) '(board curr-color) args-rest))))
 (defmacro defmove (name (&rest attributes) (&rest predicates) (&rest modifiers))
   `(setf (getf *moves* ',name)  
          (make-instance 
           'move
           :recursive (member 'recursive ',attributes)
           :mandatory (member 'mandatory ',attributes)
-          :predicate (lambda (board curr-check source target)
+          :predicate (lambda (board curr-color source target)
                        (and ,@(loop for p in predicates
                                  collecting (move/gen-pred-func-call p))))
-          :modifier (lambda (board curr-check source target)
+          :modifier (lambda (board curr-color source target)
                       ,@(loop for m in modifiers
                            collecting (move/gen-mod-func-call m))))))
 (defmove check-move ()
@@ -508,9 +517,7 @@
                         (tgt (action/tgt curr-action))
                         (recursivep (move/apply (action/move curr-action)
                                                 modified-board
-                                                (board/check modified-board
-                                                             (car src)
-                                                             (cdr src))
+                                                color
                                                 src
                                                 tgt))
                         (curr-recursive-action
@@ -542,9 +549,9 @@
                            extremum-action curr-action))
 
                    )))))
-    (let* ((actions (board/actions-for-color board
-                                             color
-                                             :recursive-action recursive-action)))
+    (let* ((actions (board/actions board
+                                   color
+                                   :recursive-action recursive-action)))
       (if (and (<= depth *max-depth*) actions)
           (ecase color
             (:white (branch actions most-negative-fixnum #'>))
@@ -558,9 +565,9 @@
                         &key recursive-action parent-node)
   (when parent-node
     (assert (board/equalp board (node/board parent-node))))
-  (let ((actions (board/actions-for-color board
-                                          color
-                                          :recursive-action recursive-action))
+  (let ((actions (board/actions board
+                                color
+                                :recursive-action recursive-action))
         (max-rate most-negative-fixnum)
         (best-a))
     (if (and (< depth *max-depth*) actions)
@@ -569,12 +576,9 @@
           (let* ((modified-board (board/clone board))
                  (src (action/src a))
                  (tgt (action/tgt a))
-                 (check (board/check modified-board
-                                     (car src)
-                                     (cdr src)))
                  (recursivep (move/apply (action/move a)
                                          modified-board
-                                         check
+                                         color
                                          src
                                          tgt))
                  (curr-recursive-a (and recursivep
@@ -663,9 +667,7 @@
              (setf curr-recursive-action
                    (and (move/apply (action/move action)
                                     board
-                                    (board/check board
-                                                 (car (action/src action))
-                                                 (cdr (action/src action)))
+                                    :black
                                     (action/src action)
                                     (action/tgt action))
                         (make-instance 'action
@@ -876,9 +878,7 @@
              (and (eq (type-of move) 'move)
                   (board/action-valid-p move
                                         board
-                                        (board/check board
-                                                     *src-square-x*
-                                                     *src-square-y*)
+                                        :white
                                         :src src
                                         :tgt tgt
                                         :recursive-action *player-recursive-action*)))
@@ -916,7 +916,7 @@
         (return-from game/apply-move-if-possible :continue))
       (setf *src-square-x* *tgt-square-x*
             *src-square-y* *tgt-square-y*)
-      (let ((recursive-move (move/apply move *board* :white-check src tgt)))
+      (let ((recursive-move (move/apply move *board* :white src tgt)))
         (setf *player-recursive-action* (and recursive-move
                                              (make-instance 'action
                                                             :move move
@@ -989,7 +989,7 @@
     (when (and (not (eq src-square :empty))
                (eq (check/color src-square) :white))
       (dolist (a (board/actions board 
-                                src-square
+                                :white
                                 :src (cons *src-square-x* *src-square-y*)
                                 :recursive-action *player-recursive-action*))
         (sdl:draw-box-* (+ (* (car (action/tgt a)) square-w) labels-w)
