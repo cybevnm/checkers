@@ -191,7 +191,7 @@
 (defun board/kings-row-p (board color y)
   "Return t if y is kings row"
   (= y (board/kings-row board color)))
-(defun board/actions (board color &key src tgt recursive-action)
+(defun board/enum-actions (board color &key src tgt recursive-action)
   (let ((result))
     (labels ((moves-actions (src tgt)
                (doplist (_ move *moves*)
@@ -234,16 +234,16 @@
                          :test #'action/eql)
                t)))
     ;; black check moves
-    (let* ((as (board/actions (board/make '("....."
-                                            "..b.."
-                                            ".....")) :black)))
+    (let* ((as (board/enum-actions (board/make '("....."
+                                                 "..b.."
+                                                 ".....")) :black)))
       (assert-eql (length as) 2)
       (assert-true (check-action as 'check-move 2 1 1 0))
       (assert-true (check-action as 'check-move 2 1 3 0)))
     ;; white check moves
-    (let* ((as (board/actions (board/make '("....."
-                                            "..w.."
-                                            ".....")) :white)))
+    (let* ((as (board/enum-actions (board/make '("....."
+                                                 "..w.."
+                                                 ".....")) :white)))
       (assert-eql (length as) 2)
       (assert-true (check-action as 'check-move 2 1 1 2))
       (assert-true (check-action as 'check-move 2 1 3 2)))
@@ -251,11 +251,11 @@
     ))
 (defun board/action-valid-p (move board color &key src tgt recursive-action)
   (member (make-instance 'action :move move :src src :tgt tgt)
-          (board/actions board
-                         color
-                         :src src
-                         :tgt tgt
-                         :recursive-action recursive-action)
+          (board/enum-actions board
+                              color
+                              :src src
+                              :tgt tgt
+                              :recursive-action recursive-action)
           :test #'action/eql))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; move ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -549,9 +549,9 @@
                            extremum-action curr-action))
 
                    )))))
-    (let* ((actions (board/actions board
-                                   color
-                                   :recursive-action recursive-action)))
+    (let* ((actions (board/enum-actions board
+                                        color
+                                        :recursive-action recursive-action)))
       (if (and (<= depth *max-depth*) actions)
           (ecase color
             (:white (branch actions most-negative-fixnum #'>))
@@ -565,9 +565,9 @@
                         &key recursive-action parent-node)
   (when parent-node
     (assert (board/equalp board (node/board parent-node))))
-  (let ((actions (board/actions board
-                                color
-                                :recursive-action recursive-action))
+  (let ((actions (board/enum-actions board
+                                     color
+                                     :recursive-action recursive-action))
         (max-rate most-negative-fixnum)
         (best-a))
     (if (and (< depth *max-depth*) actions)
@@ -988,10 +988,10 @@
   (let ((src-square (board/square board *src-square-x* *src-square-y*)))
     (when (and (not (eq src-square :empty))
                (eq (check/color src-square) :white))
-      (dolist (a (board/actions board 
-                                :white
-                                :src (cons *src-square-x* *src-square-y*)
-                                :recursive-action *player-recursive-action*))
+      (dolist (a (board/enum-actions board 
+                                     :white
+                                     :src (cons *src-square-x* *src-square-y*)
+                                     :recursive-action *player-recursive-action*))
         (sdl:draw-box-* (+ (* (car (action/tgt a)) square-w) labels-w)
                         (+ labels-h
                            (* (game/calc-inv-y board (cdr (action/tgt a)))
