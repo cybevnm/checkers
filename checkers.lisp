@@ -646,6 +646,9 @@
     (assert-eql (node/color b) :black)
     (assert-eql (node/color c) :black)))
 (defun ai/process (board &key (processor #'ai/negamax))
+  "Returns :action-applied if valid action was found and was 
+  applied to board, :no-valid-action if no valid action was 
+  found"
   (let ((curr-recursive-action))
     (loop
        :do (multiple-value-bind (rate action)
@@ -653,7 +656,9 @@
                         board
                         :black
                         :recursive-action curr-recursive-action)
-             (declare (ignorable rate))
+             (declare (ignore rate))
+             (unless action
+               (return-from ai/process :no-valid-action))
              (assert (action/fullp action))
              (setf curr-recursive-action
                    (and (move/apply (action/move action)
@@ -666,7 +671,8 @@
                         (make-instance 'action
                                        :move (action/move action)
                                        :src (action/tgt action)))))
-       :while curr-recursive-action)))
+       :while curr-recursive-action))
+  :action-applied)
 (defun test/make-boards (&rest chunks)
   (assert (evenp (length chunks)))
   (cons (board/make (stride chunks 2 :start-from 0))
@@ -796,9 +802,12 @@
                                       :black-check (sdl:color :r #x8A :g #x60 :b #x54)
                                       :black-king (sdl:color :r #xD0 :g #x00 :b #x00)))
 (defparameter *state* :board
-  "State can be one of two values:
+  "State can be one of the next values:
    :intro - intro screen
-   :board - board screen")
+   :board - board screen
+   :win - human player wins
+   :defeat - human player loses
+   :draw - no one wins")
 (defgeneric game/handle-input (state key))
 (defgeneric game/draw (state frame-index))
 (defmethod game/handle-input ((state (eql :intro)) key)
@@ -874,11 +883,37 @@
                                         :tgt tgt
                                         :recursive-action *player-recursive-action*)))
            *moves*))
+(defmacro with-move-to-be-finalized (&body body)
+  `(unwind-protect (progn ,@body)
+     (game/finalize-move)))
+(defun game/count-checks (board color)
+  (let ((result 0))
+    (doboard (x y square board)
+      (when (and (not (eql square :empty))
+                 (eql (check/color square) color))
+        (incf result)))
+    result))
+(define-test game/count-checks-test ()
+  (let ((board (board/make '("..w."
+                             "..b."
+                             "B..."
+                             "WWW."))))
+    (assert-eq (game/count-checks board :black) 2)
+    (assert-eq (game/count-checks board :white) 4)))
 (defun game/apply-move-if-possible (board)
-  (let* ((src (cons *src-square-x* *src-square-y*))
-         (tgt (cons *tgt-square-x* *tgt-square-y*))
-         (move (game/find-first-valid-move board src tgt)))
-    (when move
+  "Returns
+   :win if move lead to human player win
+   :defeat if ai response lead to human player lose
+   :continue if game should be continued"
+  (assert (> (game/count-checks board :white) 0))
+  (with-move-to-be-finalized
+    (let* ((src (cons *src-square-x* *src-square-y*))
+           (tgt (cons *tgt-square-x* *tgt-square-y*))
+           (move (game/find-first-valid-move board src tgt)))
+      (unless move
+        ;; no valid move for specified src and target,
+        ;; let the player to select another move
+        (return-from game/apply-move-if-possible :continue))
       (setf *src-square-x* *tgt-square-x*
             *src-square-y* *tgt-square-y*)
       (let ((recursive-move (move/apply move *board* :white-check src tgt)))
@@ -886,13 +921,28 @@
                                              (make-instance 'action
                                                             :move move
                                                             :src tgt)))
-        (unless recursive-move
-          (ai/process *board*)))))
-  (game/finalize-move))
+        (cond
+          ;; all black checks beaten - human player wins
+          ((= (game/count-checks board :black) 0) :win)
+          ;; human player is in middle of recursive move,
+          ;; so continue
+          (recursive-move :continue)
+          ;; let the ai player do the move
+          (t (ecase (ai/process *board*)
+               (:action-applied (if (= (game/count-checks board :white) 0)
+                                    :defeat
+                                    :continue))
+               (:no-valid-action :win))))))))
 (defun game/init-or-apply-move (board)
+  "Returns 
+   :win if move lead to human player win
+   :defeat if ai response lead to human player lose
+   :continue if game should be continued"
   (if (game/tgt-square-defined-p)
       (game/apply-move-if-possible board)
-      (game/init-move board)))
+      (progn
+        (game/init-move board)
+        :continue)))
 (defun game/cancel-move ()
   (game/finalize-move))
 (defun game/finalize-move ()
@@ -904,7 +954,9 @@
     (:sdl-key-up (game/move-selection *board* 0 1))
     (:sdl-key-right (game/move-selection *board* 1 0))
     (:sdl-key-down (game/move-selection *board* 0 -1))
-    (:sdl-key-space (game/init-or-apply-move *board*))
+    (:sdl-key-space (case (game/init-or-apply-move *board*)
+                      (:win (setf *state* :win))
+                      (:defeat (setf *state* :defeat))))
     (:sdl-key-escape (game/cancel-move))
     (:sdl-key-q (sdl:push-quit-event))))
 (defun game/calc-inv-y (board y)
@@ -1041,6 +1093,27 @@
     (game/draw-checks *board* labels-w labels-h square-w square-h)
     (game/draw-src-square *board* labels-w labels-h square-w square-h)
     (game/draw-tgt-square *board* labels-w labels-h square-w square-h)))
+(defmethod game/handle-input ((state (eql :win)) key)
+  (case key
+    (:sdl-key-q (sdl:push-quit-event))))
+(defun game/draw-ending-string (string)
+  (labels ((calc-string-left-border (str font)
+             (/ (- *window-height* (string-width str font)) 2)))
+    ;; title
+    (let* ((title string)
+           (title-left (calc-string-left-border title *biggest-font*)))
+      (sdl:draw-string-solid-* title title-left
+                               (/ *window-height* 2)
+                               :font *biggest-font*
+                               :color (getf *square-color* :black)))))
+(defmethod game/draw ((state (eql :win)) frame-index)
+  (game/draw-ending-string "VICTORY!"))
+(defmethod game/handle-input ((state (eql :defeat)) key)
+  (case key
+    (:sdl-key-q (sdl:push-quit-event))))
+(defmethod game/draw ((state (eql :defeat)) frame-index)
+  (game/draw-ending-string "DEFEAT!"))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Entry point ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
