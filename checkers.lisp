@@ -775,19 +775,13 @@
                     :color-key (sdl:color :r 99 :g 0 :b 0)
                     :filename (sdl:create-path file-name
                                                (assets-dir-path))))))
-(defun make-biggest-font ()
-  (make-font "biggest-font.bmp" 32 40))
-(defun make-big-font ()
-  (make-font "big-font.bmp" 24 30))
-(defun make-medium-font ()
-  (make-font "medium-font.bmp" 16 20))
-(defparameter *biggest-font* nil)
-(defparameter *big-font* nil)
-(defparameter *medium-font* nil)
+(defvar *biggest-font* nil)
+(defvar *big-font* nil)
+(defvar *medium-font* nil)
 (defun initialise-fonts ()
-  (setf *biggest-font* (make-biggest-font)
-        *big-font*     (make-big-font)
-        *medium-font*  (make-medium-font)))
+  (setf *biggest-font* (make-font "biggest-font.bmp" 32 40)
+        *big-font*     (make-font "big-font.bmp" 24 30)
+        *medium-font*  (make-font "medium-font.bmp" 16 20)))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; game ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
