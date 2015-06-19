@@ -21,9 +21,6 @@
     ;;  (swank::handle-requests connection t))))
     (when connection      
       (swank::handle-requests connection t))))
-(defun cons-eql-p (a b)
-  (and (eql (car a) (car b))
-       (eql (cdr a) (cdr b))))
 (defun stride (seq step &key (start-from 0))
   (loop for i from start-from below (length seq) by step
      collecting (nth i seq)))
@@ -208,19 +205,19 @@
         (setf result (remove-if-not #'move/mandatoryp result :key #'action/move)))
       (when src
         (setf result 
-              (remove-if-not (curry #'cons-eql-p src) result :key #'action/src)))
+              (remove-if-not (curry #'equal src) result :key #'action/src)))
       (when tgt
         (setf result 
-              (remove-if-not (curry #'cons-eql-p tgt) result :key #'action/tgt)))
+              (remove-if-not (curry #'equal tgt) result :key #'action/tgt)))
       (when recursive-action
         (setf result
               (remove-if-not (lambda (a)
                                (and (eq (action/move recursive-action) (action/move a))
                                     (if (action/src recursive-action)
-                                        (cons-eql-p (action/src recursive-action) (action/src a))
+                                        (equal (action/src recursive-action) (action/src a))
                                         t)
                                     (if (action/tgt recursive-action)
-                                        (cons-eql-p (action/tgt recursive-action) (action/tgt a))
+                                        (equal (action/tgt recursive-action) (action/tgt a))
                                         t)))
                              result))))
     result))
@@ -457,8 +454,8 @@
                    and can be nil"))
 (defun action/equalp (a b)
   (and (eql (action/move a) (action/move b))
-       (cons-eql-p (action/src a) (action/src b))
-       (cons-eql-p (action/tgt a) (action/tgt b))))
+       (equal (action/src a) (action/src b))
+       (equal (action/tgt a) (action/tgt b))))
 (defun action/fullp (a)
   "Returns t if action is fully defined, i.e. has src and tgt
    defined."
